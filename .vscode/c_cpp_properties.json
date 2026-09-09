@@ -1,0 +1,41 @@
+{
+  "configurations": [
+    {
+      "name": "STM32",
+      "includePath": [
+        "${workspaceFolder}/STM32/Core/Inc",
+        "${workspaceFolder}/STM32/Bootloader/Core/Inc",
+        "${workspaceFolder}/STM32/Drivers/STM32F4xx_HAL_Driver/Inc",
+        "${workspaceFolder}/STM32/Drivers/STM32F4xx_HAL_Driver/Inc/Legacy",
+        "${workspaceFolder}/STM32/Drivers/CMSIS/Device/ST/STM32F4xx/Include",
+        "${workspaceFolder}/STM32/Drivers/CMSIS/Include",
+        "${workspaceFolder}/STM32/USB_DEVICE/App",
+        "${workspaceFolder}/STM32/USB_DEVICE/Target",
+        "${workspaceFolder}/STM32/Middlewares/ST/STM32_USB_Device_Library/Core/Inc",
+        "${workspaceFolder}/STM32/Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc"
+      ],
+      "browse": {
+        "path": [
+          "${workspaceFolder}/STM32/Core/Inc",
+          "${workspaceFolder}/STM32/Core/Src",
+          "${workspaceFolder}/STM32/Bootloader/Core/Inc",
+          "${workspaceFolder}/STM32/Bootloader/Core/Src",
+          "${workspaceFolder}/STM32/Drivers/STM32F4xx_HAL_Driver/Inc",
+          "${workspaceFolder}/STM32/Drivers/STM32F4xx_HAL_Driver/Src",
+          "${workspaceFolder}/STM32/Drivers/CMSIS/Device/ST/STM32F4xx/Include",
+          "${workspaceFolder}/STM32/Drivers/CMSIS/Include"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      },
+      "defines": [
+        "USE_HAL_DRIVER",
+        "STM32F407xx"
+      ],
+      "compilerPath": "${workspaceFolder}/STM32/toolchains/arm-none-eabi-15.2/bin/arm-none-eabi-gcc",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "gcc-arm"
+    }
+  ],
+  "version": 4
+}

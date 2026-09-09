@@ -1,0 +1,8 @@
+*.bin
+*.hex
+*.elf
+*.map
+*.lst
+*.d
+!README.md
+!.gitignore

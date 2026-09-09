@@ -1,0 +1,43 @@
+{
+  "configurations": [
+    {
+      "name": "STM32F407xx",
+      "compilerPath": "${workspaceFolder}/toolchains/arm-none-eabi-15.2/bin/arm-none-eabi-gcc",
+      "compilerArgs": [
+        "-mcpu=cortex-m4",
+        "-mthumb",
+        "-mfpu=fpv4-sp-d16",
+        "-mfloat-abi=hard"
+      ],
+      "intelliSenseMode": "gcc-arm",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "defines": [
+        "USE_HAL_DRIVER",
+        "STM32F407xx"
+      ],
+      "includePath": [
+        "${workspaceFolder}/Core/Inc",
+        "${workspaceFolder}/Bootloader/Core/Inc",
+        "${workspaceFolder}/Drivers/STM32F4xx_HAL_Driver/Inc",
+        "${workspaceFolder}/Drivers/STM32F4xx_HAL_Driver/Inc/Legacy",
+        "${workspaceFolder}/Drivers/CMSIS/Device/ST/STM32F4xx/Include",
+        "${workspaceFolder}/Drivers/CMSIS/Include"
+      ],
+      "browse": {
+        "path": [
+          "${workspaceFolder}/Core/Inc",
+          "${workspaceFolder}/Core/Src",
+          "${workspaceFolder}/Bootloader/Core/Inc",
+          "${workspaceFolder}/Bootloader/Core/Src",
+          "${workspaceFolder}/Drivers/STM32F4xx_HAL_Driver/Inc",
+          "${workspaceFolder}/Drivers/STM32F4xx_HAL_Driver/Src",
+          "${workspaceFolder}/Drivers/CMSIS/Device/ST/STM32F4xx/Include",
+          "${workspaceFolder}/Drivers/CMSIS/Include"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      }
+    }
+  ],
+  "version": 4
+}

@@ -1,0 +1,54 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug STM32F407VET6 (CMSIS-DAP)",
+      "cwd": "${workspaceFolder}",
+      "executable": "${workspaceFolder}/build/DM3.1_BAT.elf",
+      "request": "launch",
+      "type": "cortex-debug",
+      "servertype": "openocd",
+      "device": "STM32F407VET6",
+      "interface": "swd",
+      "configFiles": [
+        "interface/cmsis-dap.cfg",
+        "target/stm32f4x.cfg"
+      ],
+      "searchDir": [
+        "/opt/homebrew/share/openocd/scripts"
+      ],
+      "openOCDLaunchCommands": [
+        "adapter speed 2000"
+      ],
+      "gdbPath": "${workspaceFolder}/toolchains/arm-none-eabi-15.2/bin/arm-none-eabi-gdb",
+      "armToolchainPath": "${workspaceFolder}/toolchains/arm-none-eabi-15.2/bin",
+      "preLaunchTask": "Build DM3.1_BAT",
+      "runToEntryPoint": "main",
+      "showDevDebugOutput": "none"
+    },
+    {
+      "name": "Attach STM32F407VET6 (CMSIS-DAP)",
+      "cwd": "${workspaceFolder}",
+      "executable": "${workspaceFolder}/build/DM3.1_BAT.elf",
+      "request": "attach",
+      "type": "cortex-debug",
+      "servertype": "openocd",
+      "device": "STM32F407VET6",
+      "interface": "swd",
+      "configFiles": [
+        "interface/cmsis-dap.cfg",
+        "target/stm32f4x.cfg"
+      ],
+      "searchDir": [
+        "/opt/homebrew/share/openocd/scripts"
+      ],
+      "openOCDLaunchCommands": [
+        "adapter speed 2000"
+      ],
+      "gdbPath": "${workspaceFolder}/toolchains/arm-none-eabi-15.2/bin/arm-none-eabi-gdb",
+      "armToolchainPath": "${workspaceFolder}/toolchains/arm-none-eabi-15.2/bin",
+      "preLaunchTask": "Build DM3.1_BAT",
+      "showDevDebugOutput": "none"
+    }
+  ]
+}
