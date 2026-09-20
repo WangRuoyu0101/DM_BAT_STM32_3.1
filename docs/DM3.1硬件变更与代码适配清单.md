@@ -44,7 +44,7 @@
 | 左/前/右超声波串口 | UART4 PA0/PA1、USART2 PA2/PA3、USART3 PB10/PB11 |
 | 主机 UART5 | TX PC12、RX PD2 |
 | 主机 USART1 | TX PA9、RX PA10 |
-| RTK USART6 | TX PC6、RX PC7 |
+| 原 RTK USART6 | DM3.1 已移除；PC6、PC7 不再配置为 USART6 |
 | USB FS | DM PA11、DP PA12 |
 | SWD | SWDIO PA13、SWCLK PA14 |
 | 运行灯 | PC10 `LED_RUN` |
@@ -85,17 +85,17 @@
 - CS1237 芯片和采样接口保持不变，但数字引脚明确改为 PB14 `CLK`、PD8 `DTR`，模拟地改为 `GND_ADC`。
 - DM2.1 第 7 页的 X 轴振动马达 H 桥整体删除：PA7 `SIGNAL_MOTORX_SW`、PC4 `SIGNAL_MOTORX` 不再存在。
 
-### 3.6 新增 4 口 USB HUB（待硬件落图）
+### 3.6 新增 4 口 USB HUB（已完成实板枚举）
 
 采用沁恒 `CH334P` USB 2.0 High-Speed MTT 四下行口 HUB（QFN16 3×3mm，嘉立创 `C5373042`），固定连接如下：
 
 ```text
 主机 USB
    └─ HUB 上行口
-       ├─ D1: STM32 PA11/PA12 USB CDC（现有主机 USB）
-       ├─ D2: USB 声卡
-       ├─ D3: EC800M-CN-GC 4G Cat.1
-       └─ D4: CP2102N USB-UART → RTK 3.3V UART
+       ├─ D1: CM108B USB 声卡
+       ├─ D2: 未使用
+       ├─ D3: STM32 PA11/PA12 USB CDC
+       └─ D4: CH343P USB-UART → RTK 3.3V UART
 ```
 
 这里的“4 口”是 4 个下行口，上行主机口不计入 4 口。
@@ -103,24 +103,21 @@
 #### 数据连接
 
 - HUB 上行 `DMU/DPU` 接新的主机 USB 接口 D-/D+。`CH334P` 没有 `VBUS_DET`；主机 VBUS 只留测试点，不接 `V5`，也不得与板载 `VCC_5V` 直接互供。
-- D1 的 D-/D+ 接现有 `DM/DP` 网络。取消旧“主机 USB”外部接口，并删除 D16 从 USB VBUS 向 `VCC_5V` 的肖特基供电路径，防止自供电 HUB 反灌主机。现有 USBLC6-2SC6 可保留，但板内短连不再新增一级 ESD。
-- D2 使用 `CM108B` USB 声卡芯片，配置为 USB Audio Class 1.0 Headset 模式，同时支持播放和单声道麦克风录音：`MODE=GND`、`MSEL=GND`、`PWRSEL=3.3V`。使用内部时钟和默认 USB 描述符，不装晶振、93C46 EEPROM、I2S 和 HID 按键外围。
+- D3 的 D-/D+ 接现有 STM32 `DM/DP` 网络。取消旧“主机 USB”外部接口，并删除 D16 从 USB VBUS 向 `VCC_5V` 的肖特基供电路径，防止自供电 HUB 反灌主机。现有 USBLC6-2SC6 可保留，但板内短连不再新增一级 ESD。
+- D1 使用 `CM108B` USB 声卡芯片，配置为 USB Audio Class 1.0 Headset 模式，同时支持播放和单声道麦克风录音：`MODE=GND`、`MSEL=GND`、`PWRSEL=3.3V`。使用内部时钟和默认 USB 描述符，不装晶振、93C46 EEPROM、I2S 和 HID 按键外围。
 - `CM108B LOL/LOR` 不得直接短接；各经 47µF 隔直电容和 1kΩ 电阻后合成单声道，再经 1:1、600Ω 音频隔离变压器差分接入 NS4110B `INP/INN`。同时取消现图 R13 0Ω 对 `INP` 的接地，保留 `GND_MAIN` 与 `GND_12V_SOUND` 隔离。
-- D3 改用嘉立创可直接 SMT 的 `EC800M-CN-GC`（JLCPCB `C9900056345`，扩展库，仅标准 PCBA，需 X-ray），Cat.1 最大 10Mbps 下行/5Mbps 上行。立创商城可采购型号为 `EC800MCNGB-I05-SGNSA`（`C53243597`），下单前需核对实际备料型号与固件版本。
-- `USB_DP/USB_DM` 直连 HUB D3，`USB_VBUS` 接 D3 5V 仅作连接检测，不给模组 VBAT 供电；保留 USB 升级测试点和 `USB_BOOT` 测试点。
-- EC800M 主天线按 50Ω 阻抗布线，预留 π 型匹配与 I-PEX/U.FL 天线座；SIM 卡座紧邻模组并加低电容 ESD。不接 GNSS 外围，现有 UM982 已承担定位。
-- D4 接 `CP2102N` USB D-/D+；`CP2102N_TXD -> RTK_RX`、`CP2102N_RXD <- RTK_TX`，共 `GND_MAIN`，UART 保持 `3.3V, 115200, 8N1`。复用现有 RTK 接口和 `TPD2E001DRLR` ESD，取消 USART6 PC6/PC7 到 RTK 的连接。
-- `CP2102N` 使用内部时钟，不另加晶振。
+- D4 接 `CH343P` USB D-/D+；`CH343P_TXD -> RTK_RX`、`CH343P_RXD <- RTK_TX`，共 `GND_MAIN`，UART 使用 `3.3V, 921600, 8N1`。复用现有 RTK 接口和 `TPD2E001DRLR` ESD，取消 USART6 PC6/PC7 到 RTK 的连接。
+- `CH343P` 使用内部时钟，不另加晶振。
 
 #### CH334P 最小接线
 
 | 引脚 | 信号 | 本项目接法 |
 | --- | --- | --- |
 | 1、2 | `XO`、`XI` | 两脚之间接 12MHz 晶体；芯片已内置负载电容，不再外加两颗晶振电容 |
-| 3、4 | `DM4`、`DP4` | D4：`CP2102N` USB D-/D+ |
-| 5、6 | `DM3`、`DP3` | D3：`EC800M-CN-GC` USB D-/D+ |
-| 7、8 | `DM2`、`DP2` | D2：`CM108B` USB D-/D+ |
-| 9、10 | `DM1`、`DP1` | D1：STM32 PA11/PA12 USB D-/D+ |
+| 3、4 | `DM4`、`DP4` | D4：`CH343P` USB D-/D+ |
+| 5、6 | `DM3`、`DP3` | D3：STM32 PA11/PA12 USB D-/D+ |
+| 7、8 | `DM2`、`DP2` | D2：未使用 |
+| 9、10 | `DM1`、`DP1` | D1：`CM108B` USB D-/D+ |
 | 11、12 | `DMU`、`DPU` | 主机 USB D-/D+ |
 | 13 | `RESET#/CDP` | 利用内部上电复位，完全悬空；不上拉，避免误开 CDP 并禁用低功耗休眠 |
 | 14 | `PGANG` | 悬空；复位后为 Active/Suspend 状态输出，不用它控制下行口电源 |
@@ -143,8 +140,8 @@
 | 37 | `AREG36` | 10µF 到 `GND_MAIN`，不外供 |
 | 26 | `VREF` | 10µF 到 `AVSS`，走线最短 |
 | 31 | `LOBS` | 10µF 到 `AVSS`，不连其他负载 |
-| 41 | `USBDP` | HUB D2 `DP` 经 22Ω 串联电阻接入 |
-| 42 | `USBDM` | HUB D2 `DM` 经 22Ω 串联电阻接入 |
+| 41 | `USBDP` | HUB D1 `DP` 经 22Ω 串联电阻接入 |
+| 42 | `USBDM` | HUB D1 `DM` 经 22Ω 串联电阻接入 |
 | 7 | `PWRSEL` | 10kΩ 上拉到 `DREG33`；Headset 模式下向主机声明 100mA bus-powered |
 | 10 | `MODE` | 10kΩ 下拉到 `GND_MAIN`，Headset/Playback + Recording |
 | 38 | `MSEL` | 10kΩ 下拉到 `GND_MAIN`，关闭 AA 直通混音，避免麦克风回放引起啸叫 |
@@ -162,28 +159,46 @@
 
 其余未用功能脚 `SPDIFO`、`DR/DW/SK/CS`、`GPIO1/3/4`、`SDIN/SDOUT`、`ADSCLK/ADLRCK/ADMCLK`、`DASCLK/DALRCK/DAMCLK`、`LEDO/LEDR`、`PDSW` 均不接。`MUTER`、`MUTEP`、`VOLUP`、`VOLDN` 有内部上拉，不安装按键时可不接。
 
-USB D+/D- 串联 22Ω 电阻靠近 CM108B，从 HUB 到 CM108B 全程按 90Ω 差分阻抗布线，不放板内 ESD 和共模电感。CM108B 模拟区与 USB/4G 开关电源拉开，但 `AVSS/DVSS` 使用同一块连续 `GND_MAIN` 地平面，不切地。
+USB D+/D- 串联 22Ω 电阻靠近 CM108B，从 HUB 到 CM108B 全程按 90Ω 差分阻抗布线，不放板内 ESD 和共模电感。CM108B 模拟区与 USB、电源开关节点拉开，但 `AVSS/DVSS` 使用同一块连续 `GND_MAIN` 地平面，不切地。
 
 #### 供电与保护
 
-- `CH334P` 按默认 self-powered 工作。D1 STM32、D2 CM108B、D4 CP2102N/RTK 均使用板载电源，不得通过 USB VBUS 互相反向供电；D3 只给 `USB_VBUS` 提供 5V 连接检测。
-- `VCC_5V_USB` 入口放一颗总限流/短路保护负载开关，限流值按 CM108B、CP2102N 和 HUB 实测峰值留裕量；故障不会由 `CH334P` 上报给主机。
-- EC800M `VBAT` 使用独立 12V -> 3.8V/3A 同步降压电源 `VCC_4G`，不挂现有 5V/3A 母线。模组突发发射峰值可达 2A，必须保证 VBAT 始终不低于 3.4V；大容量低 ESR 电容与去耦紧贴 VBAT 引脚。
+- `CH334P` 按默认 self-powered 工作。D1 CM108B、D3 STM32、D4 CH343P/RTK 均使用板载电源，不得通过 USB VBUS 互相反向供电；D2 未使用。
+- `VCC_5V_USB` 入口放一颗总限流/短路保护负载开关，限流值按 CM108B、CH343P 和 HUB 实测峰值留裕量；故障不会由 `CH334P` 上报给主机。
 
 #### PCB 必做项
 
-- 所有 USB 2.0 D+/D- 按 90Ω 差分阻抗、同层、紧邻完整地平面、最少过孔布线，不留分支桩线；HUB 与 4G 优先最短。
+- 所有 USB 2.0 D+/D- 按 90Ω 差分阻抗、同层、紧邻完整地平面、最少过孔布线，不留分支桩线；HUB 与各板载设备之间优先最短。
 - 连接器的低电容 ESD 放在接口第一位，保护前后走线不并行回绕；板内固定连接不重复堆叠 ESD/共模电感。
 - CH334P 裸露焊盘接地并就近打地过孔；12MHz 晶体与 `V5/VDD33` 去耦电容紧贴芯片。
 
 ## 4. 现有代码的适配优先级
 
-### USB HUB/RTK 直连改版（待硬件定版后执行）
+### USB HUB/RTK 直连改版（硬件已实现）
 
-1. STM32 USB CDC 仍是 HUB D1 下的独立 USB 设备，现有应用协议、bootloader 和固件不需修改。
-2. RTK 改为 CP2102N 直连主机后，STM32 USART6 透传命令 `0x08/0x09`、`stm32_rtk` 和 ROS `rtk_bridge` 不再是主链路；主机直接打开 CP2102N 对应的 `/dev/ttyUSB*`。
-3. Linux 不按 `/dev/ttyUSB0` 固定编号绑定 RTK；按 CP2102N VID/PID/序列号配置 udev 稳定别名，避免 4G 同时枚举多个 USB 串口后设备号变动。
-4. 若仍需要旧 STM32 RTK 透传作为备份，硬件定版前明确提出；当前方案不增加 UART 模拟开关和双路复用电路。
+2026-09-09 在 macOS 实机确认 CH334P、CM108B、STM32 CDC 和 CH343P 均可稳定枚举；HUB D2 保持未使用。
+
+#### STM32 固件必须保持
+
+1. STM32 USB CDC 作为 HUB D3 下的独立设备，继续使用 PA11/PA12、现有应用协议和 bootloader；HUB、CM108B、CH343P 均不需要 STM32 驱动。
+2. 保留上电时 PA12 拉低 120ms 的强制重枚举逻辑，只影响 STM32 所在下行口。
+3. 保留 MCU 唯一 ID 生成的 USB 序列号，主机不能按 `/dev/ttyACM0` 或 macOS `/dev/cu.usbmodem*` 的瞬时编号绑定。
+4. PB12 `SIGNAL_SOUND` 上电默认置高，即音频功放默认使能；该行为已确认为产品需求，保持不变。
+
+#### STM32 固件清理（已完成）
+
+1. [x] 停止初始化 USART6，移除 `app_rtk_bridge.c`、USART6 IRQ/MSP 和 PC6/PC7 复用配置。
+2. [x] 删除 RTK 帧 ID `0x08/0x09/0x88/0x89`、编解码结构和请求处理逻辑，不保留旧版兼容。
+3. [x] 综合状态响应由 29 字节缩短为 19 字节，只保留 GPIO 和 USB 通信诊断。
+4. [x] 同步 `.ioc`、`main.c/.h`、`stm32f4xx_it.*`、`stm32f4xx_hal_msp.c`、`Makefile`、协议测试和 README。
+
+#### 主机侧适配
+
+1. [x] Qt RTK 页使用独立串口线程直接打开 CH343P，可选 `921600/115200 8N1`，不再经 STM32 帧协议分片。
+2. [x] 删除 `stm32_rtk`、ROS `rtk_bridge` 及对应测试，不保留 STM32 RTK 透传兼容。
+3. [ ] Linux 按 CH343P VID/PID/序列号配置 udev 稳定别名，例如 `/dev/rtk`；不要固定使用 `/dev/ttyUSB0`。
+4. STM32 CDC 同样使用 `/dev/serial/by-id/` 或 udev 别名；应用态与 bootloader 切换时按 VID/PID、序列号和 USB 拓扑重新发现。
+5. CM108B 由 Linux USB Audio Class 驱动管理，STM32 不增加对应代码。
 
 ### P0：上板前必须完成（已完成）
 
@@ -208,22 +223,12 @@ Linux_ROS_WS/src/stm32_jetson_serial_comm/firmware/DM3.1_BAT_app.bin
 
 ### P2：回归验证
 
-1. 回归 3 路超声波、RTK、UART5 bootloader、USB CDC 和状态灯。
+1. 回归 3 路超声波、UART5 bootloader、HUB 下的 USB CDC 和状态灯；RTK 改为 CH343P 直连 921600bps 独立验收。
 2. 实板验证所有高有效继电器的上电默认关闭状态。
 3. 用已知砝码重新校准 CS1237 零点和比例；模拟地改版后不要直接沿用未验证的标定值。
 
 ## 5. GitHub 仓库迁移
 
-- 新地址：`git@github.com:WangRuoyu0101/DM_BAT_STM32_3.0.git`
-- 只读连通性检查成功；远端当前没有任何 ref，可按空仓库处理。
-- 当前 `DM3.1-BAT` 目录没有 `.git`，因此尚无本地 `origin` 可直接修改。
-- 相邻的 DM2.1 仓库仍指向 `git@github.com:WangRuoyu0101/DM_BAT_STM32.git`。
-
-为保留 DM2.1 的完整提交历史，应将当前 DM3.1 文件放入原 Git 历史的工作树，或把原 `.git` 历史安全迁入本目录后执行：
-
-```sh
-git remote set-url origin git@github.com:WangRuoyu0101/DM_BAT_STM32_3.0.git
-git remote -v
-```
-
-不要直接在当前目录裸执行 `git init` 后首次提交，否则会丢失与 DM2.1 提交历史的连续关系。
+- 新地址：`git@github.com:WangRuoyu0101/DM_BAT_STM32_3.1.git`
+- 本地分支：`main`，跟踪 `origin/main`。
+- 2026-09-09 已完成首次备份和 SSH 验证。

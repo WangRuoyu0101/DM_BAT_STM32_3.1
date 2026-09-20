@@ -20,7 +20,6 @@ class FakeWorker(QObject):
     state_changed = Signal(str, str)
     telemetry_changed = Signal(object)
     log_message = Signal(str)
-    rtk_received = Signal(bytes)
     command_finished = Signal(str, bool, str)
     upgrade_progress = Signal(str, int)
     upgrade_finished = Signal(bool, str)
@@ -28,7 +27,6 @@ class FakeWorker(QObject):
 
     def __init__(self):
         super().__init__()
-        self.rtk_sent = []
         self.gpio_commands = []
         self.rgb_commands = []
         self.poll_settings = []
@@ -57,8 +55,26 @@ class FakeWorker(QObject):
     def configure_polling(self, rates, enabled, timeout):
         self.poll_settings.append((rates, enabled, timeout))
 
-    def send_rtk(self, data):
-        self.rtk_sent.append(data)
+
+
+class FakeRtkWorker(QObject):
+    state_changed = Signal(str, str)
+    received = Signal(bytes)
+    log_message = Signal(str)
+    command_finished = Signal(str, bool, str)
+
+    def __init__(self):
+        super().__init__()
+        self.sent = []
+
+    def connect_port(self, _choice, _baudrate):
+        pass
+
+    def disconnect_port(self):
+        pass
+
+    def send(self, data):
+        self.sent.append(data)
 
 
 class WindowTest(unittest.TestCase):
@@ -80,14 +96,17 @@ class WindowTest(unittest.TestCase):
 
     def test_window_has_rtk_page_gpio_values_and_bounded_rtk_display(self):
         worker = FakeWorker()
-        window = MainWindow(worker, settings=self.settings)
+        rtk_worker = FakeRtkWorker()
+        window = MainWindow(worker, rtk_worker, settings=self.settings)
         self.assertEqual(
             [window.tabs.tabText(index) for index in range(window.tabs.count())],
             ["总览", "实时曲线", "控制", "RGB 灯", "RTK", "固件升级与日志"],
         )
-        self.assertFalse(window.rtk_page.isEnabled())
-        window.on_state_changed("APPLICATION", "")
         self.assertTrue(window.rtk_page.isEnabled())
+        self.assertFalse(window.rtk_text_send_button.isEnabled())
+        window.on_state_changed("APPLICATION", "")
+        rtk_worker.state_changed.emit("CONNECTED", "COM8 @ 921600")
+        self.assertTrue(window.rtk_text_send_button.isEnabled())
         for name in (
             "connectButton",
             "csvButton",
@@ -107,7 +126,7 @@ class WindowTest(unittest.TestCase):
         window._send_rtk_text()
         window.rtk_hex_input.setText("AA 55, 0x01")
         window._send_rtk_hex()
-        self.assertEqual(worker.rtk_sent, [b"LOG VERSION\r\n", b"\xAA\x55\x01"])
+        self.assertEqual(rtk_worker.sent, [b"LOG VERSION\r\n", b"\xAA\x55\x01"])
 
         window.rtk_text_input.clear()
         window._send_rtk_text()
@@ -116,18 +135,18 @@ class WindowTest(unittest.TestCase):
             window._send_rtk_text()
         except UnicodeEncodeError:
             self.fail("non-ASCII RTK text escaped the handler")
-        self.assertEqual(worker.rtk_sent, [b"LOG VERSION\r\n", b"\xAA\x55\x01"])
+        self.assertEqual(rtk_worker.sent, [b"LOG VERSION\r\n", b"\xAA\x55\x01"])
         self.assertIn("RTK 文本: 命令不能为空", window.log_view.toPlainText())
         self.assertIn("RTK 文本:", window.log_view.toPlainText())
 
-        worker.rtk_received.emit(b"ABC")
+        rtk_worker.received.emit(b"ABC")
         self.assertEqual(window.rtk_view.toPlainText(), "ABC")
         window.rtk_mode.setCurrentText("HEX")
         self.assertEqual(window.rtk_view.toPlainText(), "41 42 43")
         window.rtk_mode.setCurrentText("文本")
         window.rtk_paused.setChecked(True)
         rendered = window.rtk_view.toPlainText()
-        worker.rtk_received.emit(b"x" * 65537)
+        rtk_worker.received.emit(b"x" * 65537)
         self.assertEqual(len(window.rtk_buffer), 65536)
         self.assertEqual(bytes(window.rtk_buffer), b"x" * 65536)
         self.assertEqual(window.rtk_view.toPlainText(), rendered)
@@ -142,18 +161,20 @@ class WindowTest(unittest.TestCase):
                     fan_level=2,
                     fan1_rpm=3000 + seq,
                     fan2_rpm=3100 + seq,
-                    key_bitmap=1,
+                    key_bitmap=5,
                 )
             )
 
         self.assertEqual(window.values["fan1"].text(), "3604 RPM")
         self.assertEqual(window.values["key1"].text(), "按下")
+        self.assertEqual(window.values["key2"].text(), "释放")
+        self.assertEqual(window.values["key3"].text(), "按下")
         self.assertEqual(len(window.chart_samples["fan1"]), 600)
         window.close()
 
     def test_rgb_page_presets_custom_color_apply_and_readback(self):
         worker = FakeWorker()
-        window = MainWindow(worker, settings=self.settings)
+        window = MainWindow(worker, FakeRtkWorker(), settings=self.settings)
 
         self.assertEqual(len(window.rgb_preset_buttons), 16)
         window.rgb_preset_buttons["樱花粉"].click()
@@ -186,7 +207,7 @@ class WindowTest(unittest.TestCase):
 
     def test_rgb_readback_click_applies_and_persists_polling_without_rgb_send(self):
         worker = FakeWorker()
-        window = MainWindow(worker, settings=self.settings)
+        window = MainWindow(worker, FakeRtkWorker(), settings=self.settings)
         initial_apply_count = len(worker.poll_settings)
         window.tabs.setCurrentWidget(window.rgb_page)
         window.show()
@@ -209,6 +230,7 @@ class WindowTest(unittest.TestCase):
         restored_worker = FakeWorker()
         restored = MainWindow(
             restored_worker,
+            FakeRtkWorker(),
             settings=QSettings(str(self.settings_path), QSettings.IniFormat),
         )
         self.assertFalse(restored.poll_checks["rgb"].isChecked())
@@ -219,7 +241,7 @@ class WindowTest(unittest.TestCase):
 
     def test_overview_cards_and_chart_titles_show_live_status(self):
         worker = FakeWorker()
-        window = MainWindow(worker, settings=self.settings)
+        window = MainWindow(worker, FakeRtkWorker(), settings=self.settings)
 
         self.assertEqual(window.overview.objectName(), "overviewPage")
         self.assertEqual(len(window.overview.findChildren(QGroupBox, "overviewCard")), 4)
@@ -260,7 +282,7 @@ class WindowTest(unittest.TestCase):
 
     def test_upgrade_page_displays_bootloader_status(self):
         worker = FakeWorker()
-        window = MainWindow(worker, settings=self.settings)
+        window = MainWindow(worker, FakeRtkWorker(), settings=self.settings)
 
         worker.bootloader_status_changed.emit(BootloaderStatus(1, False, 7, 245))
 
@@ -272,17 +294,16 @@ class WindowTest(unittest.TestCase):
 
     def test_poll_switches_and_chart_y_ranges_are_configurable(self):
         worker = FakeWorker()
-        window = MainWindow(worker, settings=self.settings)
+        window = MainWindow(worker, FakeRtkWorker(), settings=self.settings)
         self.assertEqual(
             set(window.poll_checks),
-            {"status", "gpio", "ultrasonic", "cs1237", "board_io", "rgb", "rtk"},
+            {"status", "gpio", "ultrasonic", "cs1237", "board_io", "rgb"},
         )
         self.assertTrue(all(checkbox.isChecked() for checkbox in window.poll_checks.values()))
 
         window.poll_checks["gpio"].setChecked(False)
         window._apply_settings()
         self.assertFalse(worker.poll_settings[-1][1]["gpio"])
-        self.assertTrue(worker.poll_settings[-1][1]["rtk"])
 
         ranges = {"fan": (100, 9000), "ultrasonic": (10, 8000), "adc": (-1000, 1000)}
         for key, (minimum, maximum) in ranges.items():
@@ -301,7 +322,7 @@ class WindowTest(unittest.TestCase):
 
     def test_flash_control_is_a_200_ms_trigger_button(self):
         worker = FakeWorker()
-        window = MainWindow(worker, settings=self.settings)
+        window = MainWindow(worker, FakeRtkWorker(), settings=self.settings)
         window.on_state_changed("APPLICATION", "")
 
         window.flash_button.click()
@@ -321,7 +342,7 @@ class WindowTest(unittest.TestCase):
 
     def test_old_flash_timer_cannot_finish_a_new_pulse_early(self):
         worker = FakeWorker()
-        window = MainWindow(worker, settings=self.settings)
+        window = MainWindow(worker, FakeRtkWorker(), settings=self.settings)
         window.on_state_changed("APPLICATION", "")
         window.flash_button.click()
         worker.command_finished.emit("GPIO 1", True, "OK")
@@ -338,10 +359,10 @@ class WindowTest(unittest.TestCase):
         window.close()
 
     def test_applied_settings_restore_in_a_new_window(self):
-        first = MainWindow(FakeWorker(), settings=self.settings)
+        first = MainWindow(FakeWorker(), FakeRtkWorker(), settings=self.settings)
         enabled = {
             "status": False, "gpio": True, "ultrasonic": False,
-            "cs1237": True, "board_io": False, "rgb": False, "rtk": True,
+            "cs1237": True, "board_io": False, "rgb": False,
         }
         rates = {
             "status": 1.0,
@@ -374,7 +395,7 @@ from PySide6.QtCore import QSettings
 
 settings = QSettings(sys.argv[1], QSettings.IniFormat)
 print(json.dumps({
-    "enabled": {key: settings.value(f"poll/enabled/{key}", type=bool) for key in ("status", "gpio", "ultrasonic", "cs1237", "board_io", "rgb", "rtk")},
+    "enabled": {key: settings.value(f"poll/enabled/{key}", type=bool) for key in ("status", "gpio", "ultrasonic", "cs1237", "board_io", "rgb")},
     "rates": {key: settings.value(f"poll/rate/{key}", type=float) for key in ("status", "gpio", "ultrasonic", "cs1237", "board_io", "rgb")},
     "timeout": settings.value("poll/timeout", type=float),
     "rgb": {key: settings.value(f"rgb/{key}", type=int) for key in ("red", "green", "blue", "brightness", "mode")},
@@ -397,7 +418,7 @@ print(json.dumps({
 
         worker = FakeWorker()
         restored_settings = QSettings(str(self.settings_path), QSettings.IniFormat)
-        restored = MainWindow(worker, settings=restored_settings)
+        restored = MainWindow(worker, FakeRtkWorker(), settings=restored_settings)
         self.assertEqual(
             {key: checkbox.isChecked() for key, checkbox in restored.poll_checks.items()},
             enabled,
@@ -435,7 +456,7 @@ print(json.dumps({
         self.settings.setValue("rgb/mode", 4)
         self.settings.sync()
 
-        window = MainWindow(FakeWorker(), settings=self.settings)
+        window = MainWindow(FakeWorker(), FakeRtkWorker(), settings=self.settings)
         self.assertTrue(window.poll_checks["status"].isChecked())
         self.assertEqual(window.rate_inputs["status"].value(), 0.5)
         self.assertEqual(window.rate_inputs["gpio"].value(), 3.0)
@@ -462,7 +483,7 @@ print(json.dumps({
         self.settings.setValue("chart/ultrasonic/maximum", float("inf"))
         self.settings.sync()
 
-        window = MainWindow(FakeWorker(), settings=self.settings)
+        window = MainWindow(FakeWorker(), FakeRtkWorker(), settings=self.settings)
         for key, expected in ranges.items():
             self.assertEqual((window.chart_axes_y[key].min(), window.chart_axes_y[key].max()), expected)
         window.close()

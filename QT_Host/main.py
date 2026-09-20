@@ -18,7 +18,7 @@ from PySide6.QtCore import QThread
 from PySide6.QtWidgets import QApplication
 
 from dm31_host.window import MainWindow
-from dm31_host.worker import SerialWorker
+from dm31_host.worker import RtkSerialWorker, SerialWorker
 
 
 def main(argv=None) -> int:
@@ -27,20 +27,29 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     app = QApplication.instance() or QApplication([])
     worker = SerialWorker()
-    window = MainWindow(worker)
+    rtk_worker = RtkSerialWorker()
+    window = MainWindow(worker, rtk_worker)
 
     if args.smoke_test:
         window.close()
         return 0
 
     thread = QThread()
+    rtk_thread = QThread()
     worker.moveToThread(thread)
+    rtk_worker.moveToThread(rtk_thread)
     thread.finished.connect(worker.deleteLater)
+    rtk_thread.finished.connect(rtk_worker.deleteLater)
+    app.aboutToQuit.connect(worker.disconnect_port)
+    app.aboutToQuit.connect(rtk_worker.disconnect_port)
     app.aboutToQuit.connect(thread.quit)
+    app.aboutToQuit.connect(rtk_thread.quit)
     thread.start()
+    rtk_thread.start()
     window.show()
     result = app.exec()
     thread.wait(3000)
+    rtk_thread.wait(3000)
     return result
 
 

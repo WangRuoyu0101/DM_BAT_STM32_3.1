@@ -7,7 +7,6 @@
 #include "app_cs1237.h"
 #include "app_relay_control.h"
 #include "app_rgb_led.h"
-#include "app_rtk_bridge.h"
 #include "app_ultrasonic_manager.h"
 #include "main.h"
 

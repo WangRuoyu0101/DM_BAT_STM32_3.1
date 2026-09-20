@@ -14,7 +14,6 @@
 - [Jetson 端链路验证](#jetson-端链路验证)
 - [Jetson 端业务查询](#jetson-端业务查询)
 - [CS1237 ADC 使用](#cs1237-adc-使用)
-- [UM982 RTK 透传](#um982-rtk-透传)
 - [WS2812B RGB](#ws2812b-rgb)
 - [Jetson 端 GPIO 控制](#jetson-端-gpio-控制)
 - [Jetson 端 Bootloader 升级](#jetson-端-bootloader-升级)
@@ -28,7 +27,6 @@
 - Jetson 端串口链路验证和原始十六进制调试。
 - STM32 综合状态、GPIO 状态、三路超声波距离查询。
 - CS1237 原始 ADC 查询、运行时通道切换、温度/力值换算和 Jetson 本地标定。
-- UM982 配置命令、NMEA 0183 和 RTCM 任意二进制双向透传。
 - STM32 GPIO 短命令控制和 ROS2 service 控制。
 - STM32 bootloader 上位机升级，默认走 USB CDC。
 - ROS2 长运行节点，周期查询 STM32 并发布 topic。
@@ -54,8 +52,6 @@ Linux_ROS_WS/
         cs1237.py            温度/力值换算和标定文件读写
         bootloader_cli.py    stm32_bootloader 命令入口
         protocol.py          UART5 应用协议编解码
-        rtk_bridge.py        UM982 二进制分片读写 API
-        rtk_cli.py           stm32_rtk 命令入口
         serial_driver.py     pyserial 驱动封装
         serial_host.py       主机侧帧收发封装
         serial_link_cli.py   serial_link 命令入口
@@ -77,8 +73,6 @@ Linux_ROS_WS/
 | STM32 UART5 RX    | PD2            |
 | CS1237 CLK        | STM32 PB14      |
 | CS1237 DIO/DRDY   | STM32 PD8       |
-| UM982 RXD         | STM32 PC6 / USART6 TX |
-| UM982 TXD         | STM32 PC7 / USART6 RX |
 
 应用业务和 bootloader 升级默认通过 USB CDC 虚拟串口通信。UART5 仍保留为备用通信口，接线需要交叉并共地：
 
@@ -366,62 +360,6 @@ ros2 run stm32_jetson_serial_comm serial_link \
 
 ```text
 STM32 ultrasonic: seq=0x13 front=0mm(TIMEOUT) left=0mm(TIMEOUT) right=0mm(TIMEOUT)
-```
-
-## UM982 RTK 透传
-
-UM982 使用 STM32 USART6：PC6 TX 接模块 RXD，PC7 RX 接模块 TXD，双方共地。
-串口参数为模块默认的 `115200 8N1`。`stm32_rtk` 经 USB CDC 的应用协议分帧
-传输，不会把 NMEA 文本与 GPIO、ADC 等业务响应混在一起。
-
-开启 GGA 并读取 3 秒响应：
-
-```bash
-ros2 run stm32_jetson_serial_comm stm32_rtk \
-  --device /dev/ttyACM0 \
-  --send-text "GPGGA 1" \
-  --read-seconds 3
-```
-
-保存配置：
-
-```bash
-ros2 run stm32_jetson_serial_comm stm32_rtk \
-  --device /dev/ttyACM0 \
-  --send-text "saveconfig" \
-  --read-seconds 1
-```
-
-持续输出 NMEA 原始字节：
-
-```bash
-ros2 run stm32_jetson_serial_comm stm32_rtk \
-  --device /dev/ttyACM0 --listen
-```
-
-正常定位时可看到 `$GPGGA` 或 `$GNGGA`。关闭 GGA：
-
-```bash
-ros2 run stm32_jetson_serial_comm stm32_rtk \
-  --device /dev/ttyACM0 --send-text "unlog gpgga"
-```
-
-发送 RTCM 或其他二进制数据：
-
-```bash
-ros2 run stm32_jetson_serial_comm stm32_rtk \
-  --device /dev/ttyACM0 --send-hex "D3 00 00 ..."
-```
-
-`--send-text` 自动补一个 `CRLF`；`--send-hex` 不修改数据。RTCM 是二进制，
-直接作为终端文本查看出现乱码属于正常现象。STM32 接收缓冲区溢出时工具会明确
-报错，提示 Jetson 需要更快轮询。
-
-验证透传未影响其他业务：
-
-```bash
-ros2 run stm32_jetson_serial_comm serial_link \
-  --device /dev/ttyACM0 --query-status --read-seconds 3
 ```
 
 ## Jetson 端 GPIO 控制

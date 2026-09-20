@@ -37,9 +37,6 @@ class SlaveStatus:
     usb_busy_retries: int = 0
     usb_queue_overflows: int = 0
     usb_tx_failures: int = 0
-    rtk_overflow_bytes: int = 0
-    rtk_uart_errors: int = 0
-    rtk_rx_high_water: int = 0
     extended: bool = False
 
 
@@ -128,8 +125,8 @@ def _require_len(payload: bytes, expected: int, name: str) -> None:
 
 
 def decode_slave_status(payload: bytes) -> SlaveStatus:
-    if len(payload) not in (7, 29):
-        raise ValueError(f"status payload length must be 7 or 29, got {len(payload)}")
+    if len(payload) not in (7, 19, 29):
+        raise ValueError(f"status payload length must be 7, 19 or 29, got {len(payload)}")
     return SlaveStatus(
         seq=payload[0],
         tick=int.from_bytes(payload[1:5], byteorder="little"),
@@ -138,10 +135,7 @@ def decode_slave_status(payload: bytes) -> SlaveStatus:
         usb_busy_retries=int.from_bytes(payload[7:11], "little"),
         usb_queue_overflows=int.from_bytes(payload[11:15], "little"),
         usb_tx_failures=int.from_bytes(payload[15:19], "little"),
-        rtk_overflow_bytes=int.from_bytes(payload[19:23], "little"),
-        rtk_uart_errors=int.from_bytes(payload[23:27], "little"),
-        rtk_rx_high_water=int.from_bytes(payload[27:29], "little"),
-        extended=len(payload) == 29,
+        extended=len(payload) >= 19,
     )
 
 

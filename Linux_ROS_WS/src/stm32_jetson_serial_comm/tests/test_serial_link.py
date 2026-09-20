@@ -56,7 +56,7 @@ class SerialLinkTest(unittest.TestCase):
             "STM32 status: seq=0x10 tick=12345 status=OK(0x00) app_gpio=0x03",
         )
         self.assertIn(
-            "usb_busy=1 usb_overflow=2 usb_fail=3 rtk_overflow=4 rtk_errors=5 rtk_high_water=6",
+            "usb_busy=1 usb_overflow=2 usb_fail=3",
             format_status_query(
                 SlaveStatus(
                     seq=0x10,
@@ -66,9 +66,6 @@ class SerialLinkTest(unittest.TestCase):
                     usb_busy_retries=1,
                     usb_queue_overflows=2,
                     usb_tx_failures=3,
-                    rtk_overflow_bytes=4,
-                    rtk_uart_errors=5,
-                    rtk_rx_high_water=6,
                     extended=True,
                 )
             ),

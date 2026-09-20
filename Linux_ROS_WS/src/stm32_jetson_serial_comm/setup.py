@@ -26,7 +26,6 @@ setup(
             "stm32_bootloader = stm32_jetson_serial_comm.bootloader_cli:main",
             "stm32_gpio = stm32_jetson_serial_comm.gpio_cli:main",
             "stm32_fan = stm32_jetson_serial_comm.fan_cli:main",
-            "stm32_rtk = stm32_jetson_serial_comm.rtk_cli:main",
         ],
     },
 )

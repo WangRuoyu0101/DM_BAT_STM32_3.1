@@ -79,9 +79,6 @@ class SerialNodeCore:
                 f" usb_busy={status.usb_busy_retries}"
                 f" usb_overflow={status.usb_queue_overflows}"
                 f" usb_fail={status.usb_tx_failures}"
-                f" rtk_overflow={status.rtk_overflow_bytes}"
-                f" rtk_errors={status.rtk_uart_errors}"
-                f" rtk_high_water={status.rtk_rx_high_water}"
             )
         return text
 

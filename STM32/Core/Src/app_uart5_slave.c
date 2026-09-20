@@ -162,10 +162,8 @@ static void App_Uart5Slave_SendFrame(uint8_t frame_id, const uint8_t *payload, u
   */
 static void App_Uart5Slave_SendStatus(uint8_t seq, uint32_t current_tick)
 {
-  App_RtkBridgeDiagnostics rtk_diagnostics;
-  uint8_t payload[29];
+  uint8_t payload[19];
 
-  App_RtkBridge_GetDiagnostics(&rtk_diagnostics);
   payload[0] = seq;
   payload[1] = (uint8_t)(current_tick & 0xFFU);
   payload[2] = (uint8_t)((current_tick >> 8U) & 0xFFU);
@@ -176,10 +174,6 @@ static void App_Uart5Slave_SendStatus(uint8_t seq, uint32_t current_tick)
   App_Uart5Slave_StoreU32(&payload[7], s_usb_busy_retries);
   App_Uart5Slave_StoreU32(&payload[11], s_usb_queue_overflows);
   App_Uart5Slave_StoreU32(&payload[15], s_usb_tx_failures);
-  App_Uart5Slave_StoreU32(&payload[19], rtk_diagnostics.overflow_bytes);
-  App_Uart5Slave_StoreU32(&payload[23], rtk_diagnostics.uart_errors);
-  payload[27] = (uint8_t)(rtk_diagnostics.rx_high_water & 0xFFU);
-  payload[28] = (uint8_t)((rtk_diagnostics.rx_high_water >> 8U) & 0xFFU);
 
   App_Uart5Slave_SendFrame(APP_COMM_FRAME_ID_STATUS_RESPONSE, payload, (uint8_t)sizeof(payload));
 }
@@ -284,28 +278,6 @@ static void App_Uart5Slave_SendCS1237ChannelResponse(uint8_t seq, uint8_t channe
     APP_COMM_FRAME_ID_CS1237_CHANNEL_RESPONSE,
     payload,
     (uint8_t)sizeof(payload));
-}
-
-static void App_Uart5Slave_SendRtkWriteResponse(uint8_t seq, uint8_t result, uint8_t accepted_length)
-{
-  uint8_t payload[3] = {seq, result, accepted_length};
-
-  App_Uart5Slave_SendFrame(APP_COMM_FRAME_ID_RTK_WRITE_RESPONSE, payload, (uint8_t)sizeof(payload));
-}
-
-static void App_Uart5Slave_SendRtkReadResponse(uint8_t seq)
-{
-  uint8_t payload[APP_COMM_MAX_PAYLOAD_SIZE];
-  uint8_t flags = 0U;
-  size_t length;
-
-  length = App_RtkBridge_Read(&payload[2], APP_COMM_RTK_READ_DATA_MAX, &flags);
-  payload[0] = seq;
-  payload[1] = flags;
-  App_Uart5Slave_SendFrame(
-    APP_COMM_FRAME_ID_RTK_READ_RESPONSE,
-    payload,
-    (uint8_t)(length + 2U));
 }
 
 static void App_Uart5Slave_SendFanControlResponse(uint8_t seq, uint8_t result)
@@ -520,39 +492,6 @@ static void App_Uart5Slave_ProcessFrame(const App_CommFrame *frame, uint32_t cur
     {
       result = (uint8_t)App_CS1237_SetChannel((App_CS1237_Channel)request.channel);
       App_Uart5Slave_SendCS1237ChannelResponse(request.seq, request.channel, result);
-    }
-    else
-    {
-      App_Uart5Slave_SendError(request.seq, frame->frame_id, APP_COMM_ERROR_CODE_LENGTH);
-    }
-  }
-  else if (frame->frame_id == APP_COMM_FRAME_ID_RTK_WRITE_REQUEST)
-  {
-    App_CommRtkWriteRequest request;
-    uint8_t result = App_CommProtocol_DecodeRtkWriteRequest(frame, &request);
-
-    if (result == APP_COMM_CONTROL_RESULT_OK)
-    {
-      uint8_t rtk_result = (App_RtkBridge_Write(request.data, request.length) == HAL_OK)
-        ? APP_COMM_RTK_RESULT_OK
-        : APP_COMM_RTK_RESULT_UART_ERROR;
-      uint8_t accepted = (rtk_result == APP_COMM_RTK_RESULT_OK) ? request.length : 0U;
-
-      App_Uart5Slave_SendRtkWriteResponse(request.seq, rtk_result, accepted);
-    }
-    else
-    {
-      App_Uart5Slave_SendError(request.seq, frame->frame_id, APP_COMM_ERROR_CODE_LENGTH);
-    }
-  }
-  else if (frame->frame_id == APP_COMM_FRAME_ID_RTK_READ_REQUEST)
-  {
-    App_CommRtkReadRequest request;
-    uint8_t result = App_CommProtocol_DecodeRtkReadRequest(frame, &request);
-
-    if (result == APP_COMM_CONTROL_RESULT_OK)
-    {
-      App_Uart5Slave_SendRtkReadResponse(request.seq);
     }
     else
     {
@@ -863,10 +802,4 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
   /* HAL 公共回调分发到各用户模块，模块内部按串口实例自行过滤。 */
   App_Uart5Slave_HandleRxCplt(huart);
   App_UltrasonicManager_HandleRxCplt(huart);
-  App_RtkBridge_HandleRxCplt(huart);
-}
-
-void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
-{
-  App_RtkBridge_HandleError(huart);
 }

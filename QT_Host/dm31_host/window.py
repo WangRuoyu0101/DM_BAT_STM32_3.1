@@ -33,7 +33,6 @@ from PySide6.QtWidgets import (
 )
 
 from dm31_host.core import CsvRecorder, Telemetry, append_bounded, list_serial_ports
-from stm32_jetson_serial_comm.rtk_cli import encode_text_command
 from stm32_jetson_serial_comm.serial_link_cli import parse_hex_bytes
 
 
@@ -72,6 +71,8 @@ RGB_MODES = ("关闭", "常亮", "慢闪", "中闪", "快闪")
 class MainWindow(QMainWindow):
     connect_requested = Signal(object)
     disconnect_requested = Signal()
+    rtk_connect_requested = Signal(object, int)
+    rtk_disconnect_requested = Signal()
     gpio_requested = Signal(int, int)
     fan_requested = Signal(int)
     cs1237_requested = Signal(int)
@@ -80,9 +81,10 @@ class MainWindow(QMainWindow):
     rtk_send_requested = Signal(bytes)
     rgb_requested = Signal(int, int, int, int, int)
 
-    def __init__(self, worker, parent=None, settings=None):
+    def __init__(self, worker, rtk_worker, parent=None, settings=None):
         super().__init__(parent)
         self.worker = worker
+        self.rtk_worker = rtk_worker
         self.settings = settings if settings is not None else QSettings("DM3.1", "BATDebugHost")
         self.recorder = CsvRecorder()
         self.values = {}
@@ -96,6 +98,7 @@ class MainWindow(QMainWindow):
         self.poll_checks = {}
         self.rtk_buffer = bytearray()
         self.current_state = "DISCONNECTED"
+        self.rtk_connected = False
         self.flash_timer = QTimer(self)
         self.flash_timer.setSingleShot(True)
         self.flash_timer.timeout.connect(self._reset_flash_button)
@@ -104,21 +107,26 @@ class MainWindow(QMainWindow):
 
         self.connect_requested.connect(worker.connect_port)
         self.disconnect_requested.connect(worker.disconnect_port)
+        self.rtk_connect_requested.connect(rtk_worker.connect_port)
+        self.rtk_disconnect_requested.connect(rtk_worker.disconnect_port)
         self.gpio_requested.connect(worker.set_gpio)
         self.fan_requested.connect(worker.set_fan)
         self.cs1237_requested.connect(worker.set_cs1237_channel)
         self.upgrade_requested.connect(worker.upgrade)
         self.settings_requested.connect(worker.configure_polling)
-        self.rtk_send_requested.connect(worker.send_rtk)
+        self.rtk_send_requested.connect(rtk_worker.send)
         self.rgb_requested.connect(worker.set_rgb)
         worker.state_changed.connect(self.on_state_changed)
         worker.telemetry_changed.connect(self.on_telemetry)
         worker.log_message.connect(self.append_log)
-        worker.rtk_received.connect(self._on_rtk_received)
         worker.command_finished.connect(self.on_command_finished)
         worker.upgrade_progress.connect(self.on_upgrade_progress)
         worker.upgrade_finished.connect(self.on_upgrade_finished)
         worker.bootloader_status_changed.connect(self.on_bootloader_status)
+        rtk_worker.state_changed.connect(self.on_rtk_state_changed)
+        rtk_worker.received.connect(self._on_rtk_received)
+        rtk_worker.log_message.connect(lambda message: self.append_log(f"[RTK] {message}"))
+        rtk_worker.command_finished.connect(self.on_command_finished)
 
         root = QWidget()
         layout = QVBoxLayout(root)
@@ -138,9 +146,11 @@ class MainWindow(QMainWindow):
         self._apply_settings()
         self.refresh_ports()
         self.on_state_changed("DISCONNECTED", "")
+        self.on_rtk_state_changed("DISCONNECTED", "")
 
     def _build_connection_bar(self):
-        layout = QHBoxLayout()
+        layout = QVBoxLayout()
+        stm32_row = QHBoxLayout()
         self.port_combo = QComboBox()
         self.port_combo.setMinimumWidth(360)
         refresh = QPushButton("刷新串口")
@@ -154,13 +164,33 @@ class MainWindow(QMainWindow):
         self.csv_button = QPushButton("开始 CSV")
         self.csv_button.setObjectName("csvButton")
         self.csv_button.clicked.connect(self._toggle_csv)
-        layout.addWidget(QLabel("USB CDC："))
-        layout.addWidget(self.port_combo, 1)
-        layout.addWidget(refresh)
-        layout.addWidget(self.connect_button)
-        layout.addWidget(self.disconnect_button)
-        layout.addWidget(self.state_label)
-        layout.addWidget(self.csv_button)
+        stm32_row.addWidget(QLabel("STM32 USB CDC："))
+        stm32_row.addWidget(self.port_combo, 1)
+        stm32_row.addWidget(refresh)
+        stm32_row.addWidget(self.connect_button)
+        stm32_row.addWidget(self.disconnect_button)
+        stm32_row.addWidget(self.state_label)
+        stm32_row.addWidget(self.csv_button)
+        layout.addLayout(stm32_row)
+
+        rtk_row = QHBoxLayout()
+        self.rtk_port_combo = QComboBox()
+        self.rtk_port_combo.setMinimumWidth(360)
+        self.rtk_baud_combo = QComboBox()
+        self.rtk_baud_combo.addItems(("921600", "115200"))
+        self.rtk_connect_button = QPushButton("连接 RTK")
+        self.rtk_connect_button.clicked.connect(self._connect_rtk_selected)
+        self.rtk_disconnect_button = QPushButton("断开 RTK")
+        self.rtk_disconnect_button.clicked.connect(self.rtk_disconnect_requested)
+        self.rtk_state_label = QLabel("未连接")
+        rtk_row.addWidget(QLabel("RTK CH343P："))
+        rtk_row.addWidget(self.rtk_port_combo, 1)
+        rtk_row.addWidget(QLabel("波特率："))
+        rtk_row.addWidget(self.rtk_baud_combo)
+        rtk_row.addWidget(self.rtk_connect_button)
+        rtk_row.addWidget(self.rtk_disconnect_button)
+        rtk_row.addWidget(self.rtk_state_label)
+        layout.addLayout(rtk_row)
         return layout
 
     def _value_group(self, title, rows):
@@ -225,6 +255,7 @@ class MainWindow(QMainWindow):
                     ("fan2", "风扇 2"),
                     ("key1", "KEY1"),
                     ("key2", "KEY2"),
+                    ("key3", "KEY3"),
                 ),
             ),
             0,
@@ -459,9 +490,6 @@ class MainWindow(QMainWindow):
         rgb_rate.setValue(2.0)
         self.rate_inputs["rgb"] = rgb_rate
         settings_form.addRow("RGB 状态 Hz", rgb_rate)
-        self.poll_checks["rtk"] = QCheckBox("启用（固定 20 Hz）")
-        self.poll_checks["rtk"].setChecked(True)
-        settings_form.addRow("RTK", self.poll_checks["rtk"])
         self.timeout_input = QDoubleSpinBox()
         self.timeout_input.setRange(0.05, 5.0)
         self.timeout_input.setSingleStep(0.05)
@@ -482,12 +510,14 @@ class MainWindow(QMainWindow):
         text_row = QHBoxLayout()
         self.rtk_text_input = QLineEdit()
         text_send = QPushButton("发送文本")
+        self.rtk_text_send_button = text_send
         text_send.clicked.connect(self._send_rtk_text)
         text_row.addWidget(self.rtk_text_input, 1)
         text_row.addWidget(text_send)
         hex_row = QHBoxLayout()
         self.rtk_hex_input = QLineEdit()
         hex_send = QPushButton("发送 HEX")
+        self.rtk_hex_send_button = hex_send
         hex_send.clicked.connect(self._send_rtk_hex)
         hex_row.addWidget(self.rtk_hex_input, 1)
         hex_row.addWidget(hex_send)
@@ -545,7 +575,9 @@ class MainWindow(QMainWindow):
 
     def refresh_ports(self):
         current = self.port_combo.currentData()
+        current_rtk = self.rtk_port_combo.currentData()
         self.port_combo.clear()
+        self.rtk_port_combo.clear()
         try:
             choices = list_serial_ports()
         except Exception as exc:
@@ -553,17 +585,43 @@ class MainWindow(QMainWindow):
             choices = []
         for choice in choices:
             self.port_combo.addItem(str(choice), choice)
+            self.rtk_port_combo.addItem(str(choice), choice)
         if current:
             index = next(
                 (i for i in range(self.port_combo.count()) if self.port_combo.itemData(i).device == current.device),
                 -1,
             )
             self.port_combo.setCurrentIndex(index)
+        else:
+            index = next(
+                (i for i, choice in enumerate(choices) if (choice.vid, choice.pid) == (0x0483, 0x5740)),
+                -1,
+            )
+            self.port_combo.setCurrentIndex(index)
+        if current_rtk:
+            index = next(
+                (i for i in range(self.rtk_port_combo.count()) if self.rtk_port_combo.itemData(i).device == current_rtk.device),
+                -1,
+            )
+        else:
+            index = next(
+                (i for i, choice in enumerate(choices) if (choice.vid, choice.pid) == (0x1A86, 0x55D3)),
+                -1,
+            )
+        self.rtk_port_combo.setCurrentIndex(index)
 
     def _connect_selected(self):
         choice = self.port_combo.currentData()
         if choice is not None:
             self.connect_requested.emit(choice)
+
+    def _connect_rtk_selected(self):
+        choice = self.rtk_port_combo.currentData()
+        if choice is not None:
+            baudrate = int(self.rtk_baud_combo.currentText())
+            self.settings.setValue("rtk/baudrate", baudrate)
+            self._sync_settings()
+            self.rtk_connect_requested.emit(choice, baudrate)
 
     def _toggle_csv(self):
         if self.recorder.active:
@@ -653,6 +711,10 @@ class MainWindow(QMainWindow):
         self._sync_settings()
 
     def _restore_settings(self):
+        baudrate = str(self.settings.value("rtk/baudrate", "921600"))
+        index = self.rtk_baud_combo.findText(baudrate)
+        self.rtk_baud_combo.setCurrentIndex(index if index >= 0 else 0)
+
         for key, checkbox in self.poll_checks.items():
             default = checkbox.isChecked()
             value = self.settings.value(f"poll/enabled/{key}", default)
@@ -755,7 +817,7 @@ class MainWindow(QMainWindow):
         try:
             if not command:
                 raise ValueError("命令不能为空")
-            self.rtk_send_requested.emit(encode_text_command(command))
+            self.rtk_send_requested.emit(command.rstrip("\r\n").encode("ascii") + b"\r\n")
         except (UnicodeEncodeError, ValueError) as exc:
             self.append_log(f"RTK 文本: {exc}")
 
@@ -829,6 +891,7 @@ class MainWindow(QMainWindow):
         bitmap = telemetry.key_bitmap or 0
         self._set_overview_value("key1", "按下" if bitmap & 1 else "释放", "good" if bitmap & 1 else "neutral")
         self._set_overview_value("key2", "按下" if bitmap & 2 else "释放", "good" if bitmap & 2 else "neutral")
+        self._set_overview_value("key3", "按下" if bitmap & 4 else "释放", "good" if bitmap & 4 else "neutral")
         for key, value in (
             ("front", telemetry.ultrasonic_front_mm),
             ("left", telemetry.ultrasonic_left_mm),
@@ -905,11 +968,18 @@ class MainWindow(QMainWindow):
         self.connect_button.setEnabled(state == "DISCONNECTED")
         self.disconnect_button.setEnabled(state != "DISCONNECTED" and not upgrading)
         self.control_page.setEnabled(application)
-        self.rtk_page.setEnabled(application)
         self.upgrade_button.setEnabled(state in ("APPLICATION", "BOOTLOADER"))
         self._reset_flash_button()
         if state == "BOOTLOADER":
             self.request_from_app.setChecked(False)
+
+    def on_rtk_state_changed(self, state, detail):
+        self.rtk_connected = state == "CONNECTED"
+        self.rtk_state_label.setText(f"{'已连接' if self.rtk_connected else '未连接'} {detail}".strip())
+        self.rtk_connect_button.setEnabled(not self.rtk_connected)
+        self.rtk_disconnect_button.setEnabled(self.rtk_connected)
+        self.rtk_text_send_button.setEnabled(self.rtk_connected)
+        self.rtk_hex_send_button.setEnabled(self.rtk_connected)
 
     def append_log(self, message):
         timestamp = datetime.now().astimezone().strftime("%H:%M:%S.%f")[:-3]

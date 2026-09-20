@@ -7,9 +7,8 @@ from unittest import mock
 from PySide6.QtCore import QCoreApplication
 
 from dm31_host.core import PortChoice
-from dm31_host.worker import SerialWorker, _LoggingDriver
+from dm31_host.worker import RtkSerialWorker, SerialWorker, _LoggingDriver
 from stm32_jetson_serial_comm.bootloader import BootloaderStatus
-from stm32_jetson_serial_comm.rtk_bridge import RtkOverflowError
 from stm32_jetson_serial_comm.serial_host import SerialTimeoutError, UnexpectedFrameError
 
 
@@ -28,10 +27,15 @@ class WorkerTest(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QCoreApplication.instance() or QCoreApplication([])
 
-    def make_worker(self, poll_intervals=None, bootloader_mode=False, program_errors=None):
+    def make_worker(
+        self,
+        poll_intervals=None,
+        bootloader_mode=False,
+        program_errors=None,
+        jump_error=None,
+    ):
         drivers = []
         bootloaders = []
-        rtk_bridges = []
         program_errors = list(program_errors or [])
 
         def driver_factory(device, baudrate, _timeout):
@@ -44,8 +48,10 @@ class WorkerTest(unittest.TestCase):
                 self.driver = driver
                 self.rgb_commands = []
                 self.rgb_queries = 0
+                self.status_queries = 0
 
             def query_status(self, **_kwargs):
+                self.status_queries += 1
                 return SimpleNamespace(status=0)
 
             def query_gpio(self, **_kwargs):
@@ -118,30 +124,9 @@ class WorkerTest(unittest.TestCase):
                 progress(f"WRITE offset=0 size={len(image)}")
                 progress("VERIFY")
                 progress("JUMP")
+                if jump_error is not None:
+                    raise jump_error
                 return SimpleNamespace(app_size=0x78000)
-
-        class RtkBridgeFake:
-            def __init__(self, host, timeout_seconds):
-                self.host = host
-                self.timeout_seconds = timeout_seconds
-                self.read_data = b"$GNGGA\r\n"
-                self.read_count = 0
-                self.read_error = None
-                self.write_error = None
-                self.writes = []
-                rtk_bridges.append(self)
-
-            def read(self):
-                self.read_count += 1
-                if self.read_error:
-                    raise self.read_error
-                data, self.read_data = self.read_data, b""
-                return data
-
-            def write(self, data):
-                if self.write_error:
-                    raise self.write_error
-                self.writes.append(data)
 
         ports = lambda: [SimpleNamespace(
             device="COM7",
@@ -155,12 +140,11 @@ class WorkerTest(unittest.TestCase):
             driver_factory=driver_factory,
             host_factory=Host,
             bootloader_factory=Bootloader,
-            rtk_factory=RtkBridgeFake,
             port_source=ports,
             sleep=lambda _seconds: None,
             poll_intervals=poll_intervals,
         )
-        return worker, drivers, bootloaders, rtk_bridges
+        return worker, drivers, bootloaders
 
     def test_logging_driver_reports_frame_id_and_hex_bytes(self):
         class Driver:
@@ -178,11 +162,11 @@ class WorkerTest(unittest.TestCase):
         driver.write(b"\xAA\x55\x01\x00\x15")
         driver.read()
 
-        self.assertIn("TX frame=0x01 AA 55 01 00 15", logs)
-        self.assertIn("RX frame=0x81 AA 55 81 00 8E", logs)
+        self.assertIn("[STM32] TX frame=0x01 AA 55 01 00 15", logs)
+        self.assertIn("[STM32] RX frame=0x81 AA 55 81 00 8E", logs)
 
     def test_connect_poll_and_controls_publish_decoded_state(self):
-        worker, drivers, _bootloaders, _rtk_bridges = self.make_worker()
+        worker, drivers, _bootloaders = self.make_worker()
         telemetry = []
         commands = []
         logs = []
@@ -220,11 +204,10 @@ class WorkerTest(unittest.TestCase):
             0.35,
         )
         self.assertEqual(worker._intervals["gpio"], 0.5)
-        self.assertEqual(worker._intervals["rtk"], 0.05)
         self.assertEqual(worker._serial_timeout, 0.35)
 
     def test_rgb_control_and_poll_update_flat_telemetry(self):
-        worker, _drivers, _bootloaders, _rtk_bridges = self.make_worker()
+        worker, _drivers, _bootloaders = self.make_worker()
         worker.connect_port(PortChoice("COM7", vid=1, pid=2, serial_number="ABC"))
         host = worker._host
 
@@ -237,7 +220,7 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue(worker._telemetry.rgb_output_on)
 
     def test_connect_recognizes_bootloader_and_publishes_idle_status(self):
-        worker, drivers, _bootloaders, _rtk_bridges = self.make_worker(bootloader_mode=True)
+        worker, drivers, _bootloaders = self.make_worker(bootloader_mode=True)
         states = []
         statuses = []
         worker.state_changed.connect(lambda *args: states.append(args))
@@ -252,7 +235,7 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue(worker._timer.isActive())
 
     def test_upgrade_exclusively_switches_baudrate_and_recovers_application(self):
-        worker, drivers, bootloaders, _rtk_bridges = self.make_worker()
+        worker, drivers, bootloaders = self.make_worker()
         states = []
         finished = []
         worker.state_changed.connect(lambda *args: states.append(args))
@@ -269,9 +252,30 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(finished[-1][0], True)
         self.assertEqual(states[-1][0], "APPLICATION")
         self.assertTrue(worker._timer.isActive())
+        self.assertEqual(worker._host.status_queries, 1)
+
+    def test_jump_usb_disconnect_waits_for_and_verifies_application(self):
+        worker, _drivers, _bootloaders = self.make_worker(
+            jump_error=OSError(6, "Device not configured")
+        )
+        logs = []
+        finished = []
+        worker.log_message.connect(logs.append)
+        worker.upgrade_finished.connect(lambda *args: finished.append(args))
+        worker.connect_port(PortChoice("COM7", vid=1, pid=2, serial_number="ABC"))
+
+        with tempfile.TemporaryDirectory() as directory:
+            image = Path(directory) / "DM3.1_BAT_app.bin"
+            image.write_bytes(b"firmware")
+            worker.upgrade(str(image), True)
+
+        self.assertTrue(finished[-1][0])
+        self.assertEqual(worker._state, "APPLICATION")
+        self.assertEqual(worker._host.status_queries, 1)
+        self.assertTrue(any("JUMP 后 USB 已断开" in message for message in logs))
 
     def test_failed_upgrade_keeps_bootloader_connected_and_can_retry(self):
-        worker, _drivers, _bootloaders, _rtk_bridges = self.make_worker(
+        worker, _drivers, _bootloaders = self.make_worker(
             program_errors=[RuntimeError("write failed")]
         )
         states = []
@@ -294,64 +298,8 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue(finished[-1][0])
         self.assertEqual(states[-1][0], "APPLICATION")
 
-    def test_rtk_bridge_polls_and_sends_data(self):
-        worker, _drivers, _bootloaders, rtk_bridges = self.make_worker()
-        received = []
-        commands = []
-        worker.rtk_received.connect(received.append)
-        worker.command_finished.connect(lambda *args: commands.append(args))
-
-        worker.connect_port(PortChoice("COM7", vid=1, pid=2, serial_number="ABC"))
-        worker._poll_rtk()
-        worker.send_rtk(b"LOG VERSION\r\n")
-
-        self.assertEqual(len(rtk_bridges), 1)
-        self.assertIs(rtk_bridges[0].host, worker._host)
-        self.assertEqual(rtk_bridges[0].timeout_seconds, worker._serial_timeout)
-        self.assertEqual(received, [b"$GNGGA\r\n"])
-        self.assertEqual(rtk_bridges[0].writes, [b"LOG VERSION\r\n"])
-        self.assertEqual(commands[-1], ("RTK 发送", True, "13 bytes"))
-
-    def test_rtk_poll_does_not_publish_telemetry(self):
-        worker, _drivers, _bootloaders, _rtk_bridges = self.make_worker()
-        telemetry = []
-        worker.telemetry_changed.connect(telemetry.append)
-
-        worker.connect_port(PortChoice("COM7", vid=1, pid=2, serial_number="ABC"))
-        published = len(telemetry)
-        sample_seq = worker._telemetry.sample_seq
-        worker._deadlines = {name: float("inf") for name in worker._deadlines}
-        worker._deadlines["rtk"] = 0.0
-        worker.poll_once()
-
-        self.assertEqual(len(telemetry), published)
-        self.assertEqual(worker._telemetry.sample_seq, sample_seq)
-
-    def test_configure_polling_recreates_active_rtk_bridge_with_new_timeout(self):
-        worker, _drivers, _bootloaders, rtk_bridges = self.make_worker()
-        worker.connect_port(PortChoice("COM7", vid=1, pid=2, serial_number="ABC"))
-        host = worker._host
-
-        worker.configure_polling(
-            {
-                "status": 1.0,
-                "gpio": 2.0,
-                "ultrasonic": 4.0,
-                "cs1237": 8.0,
-                "board_io": 2.0,
-                "rgb": 2.0,
-            },
-            {name: True for name in worker._intervals},
-            0.35,
-        )
-
-        self.assertEqual(len(rtk_bridges), 2)
-        self.assertIs(worker._host, host)
-        self.assertIs(rtk_bridges[-1].host, host)
-        self.assertEqual(rtk_bridges[-1].timeout_seconds, 0.35)
-
     def test_configure_polling_accepts_legacy_ui_dictionaries_without_rgb(self):
-        worker, _drivers, _bootloaders, _rtk_bridges = self.make_worker()
+        worker, _drivers, _bootloaders = self.make_worker()
         commands = []
         worker.command_finished.connect(lambda *args: commands.append(args))
         rates = {"status": 1.0, "gpio": 2.0, "ultrasonic": 4.0, "cs1237": 8.0, "board_io": 2.0}
@@ -371,7 +319,7 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(worker._serial_timeout, 0.4)
 
     def test_poll_switches_disable_queries_and_reenable_immediately(self):
-        worker, _drivers, _bootloaders, rtk_bridges = self.make_worker()
+        worker, _drivers, _bootloaders = self.make_worker()
         worker.connect_port(PortChoice("COM7", vid=1, pid=2, serial_number="ABC"))
         calls = []
         for name in worker._intervals:
@@ -392,9 +340,6 @@ class WorkerTest(unittest.TestCase):
         worker.poll_once()
         self.assertEqual(calls, [])
         self.assertEqual(worker._host.rgb_queries, 0)
-        worker.send_rtk(b"manual")
-        self.assertEqual(rtk_bridges[-1].writes, [b"manual"])
-
         enabled["gpio"] = True
         worker.configure_polling(rates, enabled, 0.35)
         worker.poll_once()
@@ -407,7 +352,7 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(worker._host.rgb_queries, 1)
 
     def test_invalid_poll_rates_do_not_change_active_settings(self):
-        worker, _drivers, _bootloaders, _rtk_bridges = self.make_worker()
+        worker, _drivers, _bootloaders = self.make_worker()
         commands = []
         worker.command_finished.connect(lambda *args: commands.append(args))
         original = dict(worker._intervals)
@@ -429,33 +374,8 @@ class WorkerTest(unittest.TestCase):
             self.assertEqual(worker._intervals, original)
             self.assertEqual(commands[-1][0:2], ("轮询设置", False))
 
-    def test_rtk_errors_are_visible_without_disconnect_on_overflow(self):
-        worker, _drivers, _bootloaders, rtk_bridges = self.make_worker()
-        commands = []
-        logs = []
-        worker.command_finished.connect(lambda *args: commands.append(args))
-        worker.log_message.connect(logs.append)
-
-        worker.connect_port(PortChoice("COM7", vid=1, pid=2, serial_number="ABC"))
-        rtk_bridges[0].read_error = RtkOverflowError("overflow")
-        worker._deadlines = {name: float("inf") for name in worker._deadlines}
-        worker._deadlines["rtk"] = 0.0
-        worker.poll_once()
-        self.assertEqual(worker._state, "APPLICATION")
-        rtk_bridges[0].write_error = RtkOverflowError("write overflow")
-        worker.send_rtk(b"x")
-        worker.disconnect_port()
-        worker.send_rtk(b"x")
-
-        self.assertIn("rtk: overflow", logs)
-        self.assertEqual(worker._state, "DISCONNECTED")
-        self.assertEqual(
-            commands[-2:],
-            [("RTK 发送", False, "write overflow"), ("RTK 发送", False, "设备未连接")],
-        )
-
     def test_unsupported_rgb_poll_keeps_old_firmware_connected(self):
-        worker, drivers, _bootloaders, _rtk_bridges = self.make_worker()
+        worker, drivers, _bootloaders = self.make_worker()
         logs = []
         worker.log_message.connect(logs.append)
         worker.connect_port(PortChoice("COM7", vid=1, pid=2, serial_number="ABC"))
@@ -473,20 +393,50 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(worker._host.query_rgb.call_count, 1)
         self.assertIn("rgb: 固件不支持 RGB 回读，已暂停本次连接的 RGB 轮询", logs)
 
-    def test_rtk_is_not_starved_by_another_due_poll(self):
-        worker, _drivers, _bootloaders, rtk_bridges = self.make_worker(
-            {"status": 0.049, "gpio": 9, "ultrasonic": 9, "cs1237": 9, "board_io": 9, "rgb": 9}
-        )
-        worker.connect_port(PortChoice("COM7", vid=1, pid=2, serial_number="ABC"))
-        worker._deadlines = {name: float("inf") for name in worker._deadlines}
-        worker._deadlines["status"] = worker._deadlines["rtk"] = 0.0
+    def test_rtk_worker_uses_direct_serial_port(self):
+        class Driver:
+            def __init__(self):
+                self.reads = [b"$GNGGA,,,,,,0,,,,,,,,*78\r\n", b""]
+                self.writes = []
+                self.closed = False
 
-        with mock.patch("dm31_host.worker.time.monotonic", side_effect=[step / 20 for step in range(10)]):
-            for _ in range(10):
-                worker.poll_once()
+            def read(self, size):
+                self.assert_size = size
+                return self.reads.pop(0)
 
-        self.assertEqual(rtk_bridges[0].read_count, 5)
+            def write(self, data):
+                self.writes.append(data)
+                return len(data)
 
+            def close(self):
+                self.closed = True
+
+        driver = Driver()
+        opened = []
+
+        def factory(device, baudrate, timeout):
+            opened.append((device, baudrate, timeout))
+            return driver
+
+        worker = RtkSerialWorker(driver_factory=factory)
+        states = []
+        received = []
+        commands = []
+        worker.state_changed.connect(lambda *args: states.append(args))
+        worker.received.connect(received.append)
+        worker.command_finished.connect(lambda *args: commands.append(args))
+
+        worker.connect_port(PortChoice("COM8"), 921600)
+        worker.poll_once()
+        worker.send(b"LOG VERSION\r\n")
+        worker.disconnect_port()
+
+        self.assertEqual(opened, [("COM8", 921600, 0.0)])
+        self.assertEqual(received, [b"$GNGGA,,,,,,0,,,,,,,,*78\r\n"])
+        self.assertEqual(driver.writes, [b"LOG VERSION\r\n"])
+        self.assertEqual(commands[-1], ("RTK 发送", True, "13 bytes"))
+        self.assertEqual(states[-1][0], "DISCONNECTED")
+        self.assertTrue(driver.closed)
 
 if __name__ == "__main__":
     unittest.main()

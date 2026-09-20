@@ -12,7 +12,6 @@
 - [调试](#调试)
 - [Flash 分区与启动流程](#flash-分区与启动流程)
 - [CS1237 ADC](#cs1237-adc)
-- [UM982 RTK 透传](#um982-rtk-透传)
 - [WS2812B RGB 灯](#ws2812b-rgb-灯)
 - [UART5 应用通信协议](#uart5-应用通信协议)
 - [USB CDC/UART5 Bootloader 协议](#usb-cdcuart5-bootloader-协议)
@@ -112,32 +111,6 @@ STM32/
   STM32F407XX_APP_FLASH.ld    主应用链接脚本，起始地址 0x08008000
   STM32F407XX_BOOT_FLASH.ld   bootloader 链接脚本，起始地址 0x08000000
 ```
-
-## UM982 RTK 透传
-
-UM982 通过 USART6 与 STM32 连接，USB CDC 继续使用应用二进制协议封装 RTK
-数据，因此可与 GPIO、超声波和 CS1237 查询共存。
-
-| UM982 | STM32 | 参数 |
-| --- | --- | --- |
-| RXD | PC6 / USART6 TX | 115200 8N1 |
-| TXD | PC7 / USART6 RX | 115200 8N1 |
-| GND | GND | 必须共地 |
-
-UART6 接收使用 1024 字节环形缓冲区。STM32 不解析 NMEA 0183 或 RTCM，只
-保证字节顺序和内容不变。缓冲区满时保留旧数据、丢弃新字节，并在下一次读取
-响应的 `flags bit0` 上报溢出。
-
-| ID | 方向 | payload |
-| --- | --- | --- |
-| `0x08` | Jetson -> STM32 | `seq + data(1..31 bytes)` |
-| `0x88` | STM32 -> Jetson | `seq + result + accepted_length` |
-| `0x09` | Jetson -> STM32 | `seq` |
-| `0x89` | STM32 -> Jetson | `seq + flags + data(0..30 bytes)` |
-
-UM982 板卡说明书给出的默认波特率为 115200。新模块可能默认不输出 NMEA，
-可发送 `GPGGA 1` 开启当前端口的 GGA，发送 `saveconfig` 保存配置；关闭时
-发送 `unlog gpgga`。
 
 ## WS2812B RGB 灯
 
@@ -435,8 +408,6 @@ frame_id + length + payload
 | `0x05` | Jetson -> STM32 | `seq + password` | 请求进入 bootloader |
 | `0x06` | Jetson -> STM32 | `seq` | 查询 CS1237 最新快照 |
 | `0x07` | Jetson -> STM32 | `seq + channel` | 切换 CS1237 通道 |
-| `0x08` | Jetson -> STM32 | `seq + RTK data` | 向 UM982 写入 1..31 字节 |
-| `0x09` | Jetson -> STM32 | `seq` | 读取 UM982 缓冲数据 |
 | `0x0C` | Jetson -> STM32 | `seq + red + green + blue + brightness + mode` | 设置 WS2812B RGB；亮度 0..100，模式 0..4 |
 | `0x0D` | Jetson -> STM32 | `seq` | 查询 WS2812B RGB 实际状态 |
 | `0x81` | STM32 -> Jetson | `seq + tick(uint32 小端) + status + gpio_bitmap` | 综合状态响应 |
@@ -446,8 +417,6 @@ frame_id + length + payload
 | `0x85` | STM32 -> Jetson | `seq + result` | bootloader 请求响应 |
 | `0x86` | STM32 -> Jetson | `seq + raw_adc(int32 小端) + channel + valid + error` | CS1237 快照响应 |
 | `0x87` | STM32 -> Jetson | `seq + channel + result` | CS1237 通道切换响应 |
-| `0x88` | STM32 -> Jetson | `seq + result + accepted_length` | UM982 写入响应 |
-| `0x89` | STM32 -> Jetson | `seq + flags + RTK data` | UM982 读取响应 |
 | `0x8C` | STM32 -> Jetson | `seq + result` | RGB 设置响应；`0` 成功、`1` 亮度非法、`2` 模式非法 |
 | `0x8D` | STM32 -> Jetson | `seq + red + green + blue + brightness + mode + output_on` | RGB 实际状态响应 |
 | `0xE1` | STM32 -> Jetson | `seq + source_frame_id + error_code` | 应用错误响应 |
@@ -661,8 +630,6 @@ python3 -m unittest STM32/tests/test_tim6_periodic_tick.py -v
 python3 -m unittest STM32/tests/test_usb_cdc_echo.py -v
 python3 -m unittest STM32/tests/test_cs1237_driver.py -v
 python3 -m unittest STM32/tests/test_cs1237_protocol.py -v
-python3 -m unittest STM32/tests/test_rtk_bridge.py -v
-python3 -m unittest STM32/tests/test_rtk_protocol.py -v
 ```
 
 USB CDC 虚拟串口复用 UART5 应用协议。烧录应用后，主机应枚举出 `/dev/ttyACM*`，可直接走同一套状态查询：
@@ -693,10 +660,10 @@ make -C STM32 app
 
 ## DM3.1 风扇与按键
 
-- PA5 使用 TIM2_CH1 输出 25 kHz PWM，四档为 25%/50%/75%/100%，上电默认 2 档（50%）。
+- PA5 使用 TIM2_CH1 输出 25 kHz PWM，四档为 25%/50%/75%/100%，上电默认 4 档（100%）。
 - PA6/PA7 使用 TIM3_CH1/CH2 下降沿输入捕获，两路转速按每转 2 个脉冲计算；1.5 秒无脉冲回报 0 RPM。
-- PE15/PE13 分别为 KEY1/KEY2，内部上拉、低电平按下、20 ms 软件消抖。
-- 应用协议 `0x0A/0x8A` 设置风扇档位，`0x0B/0x8B` 查询档位、双路 RPM 和按键位图。
+- PE15/PE13/PE11 分别为 KEY1/KEY2/KEY3，内部上拉、低电平按下、20 ms 软件消抖。
+- 应用协议 `0x0A/0x8A` 设置风扇档位，`0x0B/0x8B` 查询档位、双路 RPM 和按键位图；KEY1/KEY2/KEY3 分别对应 bit0/bit1/bit2。
 - PB13 以 WS2812B 协议驱动三颗级联且同步同色的 RGB 灯；见“WS2812B RGB 灯”。
 
 应用构建产物为 `build/app/DM3.1_BAT_app.bin`，并自动同步至

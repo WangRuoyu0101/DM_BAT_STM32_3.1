@@ -12,9 +12,9 @@ static volatile uint8_t s_capture_pending[2];
 static uint16_t s_previous_capture[2];
 static uint32_t s_last_tach_tick[2];
 static uint8_t s_have_previous[2];
-static uint8_t s_key_candidate[2];
-static uint8_t s_key_stable[2];
-static uint8_t s_key_count[2];
+static uint8_t s_key_candidate[3];
+static uint8_t s_key_stable[3];
+static uint8_t s_key_count[3];
 static uint32_t s_last_run_tick;
 static App_BoardIO_Snapshot s_snapshot;
 
@@ -105,7 +105,10 @@ void App_BoardIO_Run(uint32_t current_tick)
 
   App_BoardIO_UpdateKey(0U, HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_RESET);
   App_BoardIO_UpdateKey(1U, HAL_GPIO_ReadPin(KEY2_GPIO_Port, KEY2_Pin) == GPIO_PIN_RESET);
-  s_snapshot.key_bitmap = (uint8_t)(s_key_stable[0] | (s_key_stable[1] << 1U));
+  App_BoardIO_UpdateKey(2U, HAL_GPIO_ReadPin(KEY3_GPIO_Port, KEY3_Pin) == GPIO_PIN_RESET);
+  s_snapshot.key_bitmap = (uint8_t)(s_key_stable[0] |
+                                    (s_key_stable[1] << 1U) |
+                                    (s_key_stable[2] << 2U));
 
   for (index = 0U; index < 2U; index++)
   {

@@ -11,7 +11,6 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
 from stm32_jetson_serial_comm.bootloader import BootloaderClient, BootloaderProtocolError
-from stm32_jetson_serial_comm.rtk_bridge import RtkBridge, RtkOverflowError
 from stm32_jetson_serial_comm.serial_driver import SerialDriver
 from stm32_jetson_serial_comm.serial_host import SerialHost, SerialTimeoutError, UnexpectedFrameError
 
@@ -19,9 +18,10 @@ from dm31_host.core import PortChoice, Telemetry, find_matching_port
 
 
 class _LoggingDriver:
-    def __init__(self, driver, logger):
+    def __init__(self, driver, logger, prefix="STM32"):
         self._driver = driver
         self._logger = logger
+        self._prefix = prefix
 
     @staticmethod
     def _describe(direction: str, data: bytes) -> str:
@@ -29,13 +29,13 @@ class _LoggingDriver:
         return f"{direction}{frame} {data.hex(' ').upper()}"
 
     def write(self, data: bytes) -> int:
-        self._logger(self._describe("TX", data))
+        self._logger(f"[{self._prefix}] {self._describe('TX', data)}")
         return self._driver.write(data)
 
     def read(self, size: int = 256) -> bytes:
         data = self._driver.read(size)
         if data:
-            self._logger(self._describe("RX", data))
+            self._logger(f"[{self._prefix}] {self._describe('RX', data)}")
         return data
 
     def close(self) -> None:
@@ -46,7 +46,6 @@ class SerialWorker(QObject):
     state_changed = Signal(str, str)
     telemetry_changed = Signal(object)
     log_message = Signal(str)
-    rtk_received = Signal(bytes)
     command_finished = Signal(str, bool, str)
     upgrade_progress = Signal(str, int)
     upgrade_finished = Signal(bool, str)
@@ -57,7 +56,6 @@ class SerialWorker(QObject):
         driver_factory=SerialDriver.open,
         host_factory=SerialHost,
         bootloader_factory=BootloaderClient,
-        rtk_factory=RtkBridge,
         port_source=None,
         sleep=time.sleep,
         poll_intervals=None,
@@ -68,13 +66,11 @@ class SerialWorker(QObject):
         self._driver_factory = driver_factory
         self._host_factory = host_factory
         self._bootloader_factory = bootloader_factory
-        self._rtk_factory = rtk_factory
         self._port_source = port_source
         self._sleep = sleep
         self._driver = None
         self._host = None
         self._bootloader = None
-        self._rtk = None
         self._choice = None
         self._state = "DISCONNECTED"
         self._seq = 0
@@ -87,7 +83,6 @@ class SerialWorker(QObject):
             "board_io": 0.5,
             "rgb": 0.5,
         })
-        self._intervals["rtk"] = 0.05
         self._enabled = {name: True for name in self._intervals}
         self._serial_timeout = serial_timeout
         self._deadlines = {name: 0.0 for name in self._intervals}
@@ -114,7 +109,6 @@ class SerialWorker(QObject):
         self._driver = None
         self._host = None
         self._bootloader = None
-        self._rtk = None
 
     def _publish(self) -> None:
         self._telemetry.sample_seq += 1
@@ -142,7 +136,6 @@ class SerialWorker(QObject):
                 self._timer.start()
                 return
             self._host = self._host_factory(self._driver)
-            self._rtk = self._rtk_factory(self._host, self._serial_timeout)
             self._telemetry.link_ok = True
             self._deadlines = {name: 0.0 for name in self._intervals}
             self._set_state("APPLICATION", choice.device)
@@ -205,11 +198,6 @@ class SerialWorker(QObject):
         self._telemetry.rgb_output_on = status.output_on
         self._telemetry.rgb_timestamp = datetime.now().astimezone()
 
-    def _poll_rtk(self) -> None:
-        data = self._rtk.read()
-        if data:
-            self.rtk_received.emit(data)
-
     @Slot()
     def poll_once(self) -> None:
         if self._state == "BOOTLOADER" and self._bootloader is not None:
@@ -232,11 +220,7 @@ class SerialWorker(QObject):
             try:
                 getattr(self, f"_poll_{name}")()
                 self._deadlines[name] = now + interval
-                if name != "rtk":
-                    self._publish()
-            except RtkOverflowError as exc:
-                self.log_message.emit(f"{name}: {exc}")
-                self._deadlines[name] = now + interval
+                self._publish()
             except UnexpectedFrameError as exc:
                 if name == "rgb" and str(exc).endswith("got 0xE1"):
                     self._deadlines[name] = float("inf")
@@ -264,7 +248,7 @@ class SerialWorker(QObject):
 
     @Slot(object, object, float)
     def configure_polling(self, rates_hz, enabled, serial_timeout: float) -> None:
-        expected = set(self._intervals) - {"rtk"}
+        expected = set(self._intervals)
         try:
             legacy_rates = set(rates_hz) == expected - {"rgb"}
             if not legacy_rates and set(rates_hz) != expected:
@@ -287,7 +271,7 @@ class SerialWorker(QObject):
             return
         self._intervals = {
             name: self._intervals[name] if name == "rgb" and legacy_rates
-            else 1.0 / rates[name] if name != "rtk" else 0.05
+            else 1.0 / rates[name]
             for name in self._intervals
         }
         self._enabled = {
@@ -295,21 +279,8 @@ class SerialWorker(QObject):
             for name in self._enabled
         }
         self._serial_timeout = float(serial_timeout)
-        if self._rtk is not None:
-            self._rtk = self._rtk_factory(self._host, self._serial_timeout)
         self._deadlines = {name: 0.0 for name in self._intervals}
         self.command_finished.emit("轮询设置", True, "OK")
-
-    @Slot(bytes)
-    def send_rtk(self, data: bytes) -> None:
-        if self._state != "APPLICATION" or self._rtk is None:
-            self.command_finished.emit("RTK 发送", False, "设备未连接")
-            return
-        try:
-            self._rtk.write(data)
-            self.command_finished.emit("RTK 发送", True, f"{len(data)} bytes")
-        except (Exception, SystemExit) as exc:
-            self.command_finished.emit("RTK 发送", False, str(exc))
 
     @Slot(int, int)
     def set_gpio(self, channel_id: int, level: int) -> None:
@@ -365,6 +336,10 @@ class SerialWorker(QObject):
         self.log_message.emit(message)
         self.upgrade_progress.emit(message, percent)
 
+    @staticmethod
+    def _is_usb_disconnect(exc: BaseException) -> bool:
+        return getattr(exc, "errno", None) in {5, 6, 19}
+
     @Slot(str, bool)
     def upgrade(self, image_path: str, request_from_app: bool = True) -> None:
         if self._choice is None:
@@ -390,18 +365,33 @@ class SerialWorker(QObject):
                 self._driver,
                 status_callback=self.bootloader_status_changed.emit,
             )
-            self._bootloader.program_image(
-                image,
-                timeout_seconds=3.0,
-                erase_timeout_seconds=10.0,
-                progress=lambda message: self._upgrade_log(message, len(image)),
-            )
+            jump_started = False
+
+            def report_progress(message: str) -> None:
+                nonlocal jump_started
+                jump_started = jump_started or message.startswith("JUMP")
+                self._upgrade_log(message, len(image))
+
+            try:
+                self._bootloader.program_image(
+                    image,
+                    timeout_seconds=3.0,
+                    erase_timeout_seconds=10.0,
+                    progress=report_progress,
+                )
+            except (Exception, SystemExit) as exc:
+                if not jump_started or not self._is_usb_disconnect(exc):
+                    raise
+                self.log_message.emit(f"JUMP 后 USB 已断开，等待应用重新枚举: {exc}")
             self._close_driver()
             self._sleep(1.5)
             app_port = self._wait_for_port()
             self._driver = self._open_driver(app_port.device, 115200)
-            self._host = self._host_factory(self._driver)
-            self._rtk = self._rtk_factory(self._host, self._serial_timeout)
+            host = self._host_factory(self._driver)
+            status = host.query_status(seq=self._next_seq(), timeout_seconds=0.5)
+            if status.status != 0:
+                raise RuntimeError(f"应用状态异常: 0x{status.status:02X}")
+            self._host = host
             self._choice = app_port
             self._telemetry.link_ok = True
             self._deadlines = {name: 0.0 for name in self._intervals}
@@ -420,3 +410,65 @@ class SerialWorker(QObject):
             else:
                 self._set_state("DISCONNECTED", str(exc))
             self.upgrade_finished.emit(False, str(exc))
+
+
+class RtkSerialWorker(QObject):
+    state_changed = Signal(str, str)
+    received = Signal(bytes)
+    log_message = Signal(str)
+    command_finished = Signal(str, bool, str)
+
+    def __init__(self, driver_factory=SerialDriver.open, poll_interval_ms=10, read_size=8192, parent=None):
+        super().__init__(parent)
+        self._driver_factory = driver_factory
+        self._driver = None
+        self._read_size = read_size
+        self._timer = QTimer(self)
+        self._timer.setInterval(poll_interval_ms)
+        self._timer.timeout.connect(self.poll_once)
+
+    @Slot(object, int)
+    def connect_port(self, choice: PortChoice, baudrate: int) -> None:
+        self.disconnect_port()
+        try:
+            self._driver = self._driver_factory(choice.device, baudrate, 0.0)
+            self._timer.start()
+            self.state_changed.emit("CONNECTED", f"{choice.device} @ {baudrate}")
+        except (Exception, SystemExit) as exc:
+            self._driver = None
+            self.state_changed.emit("DISCONNECTED", str(exc))
+            self.log_message.emit(str(exc))
+
+    @Slot()
+    def disconnect_port(self) -> None:
+        self._timer.stop()
+        if self._driver is not None:
+            self._driver.close()
+        self._driver = None
+        self.state_changed.emit("DISCONNECTED", "")
+
+    @Slot()
+    def poll_once(self) -> None:
+        if self._driver is None:
+            return
+        try:
+            data = self._driver.read(self._read_size)
+            if data:
+                self.received.emit(data)
+        except (Exception, SystemExit) as exc:
+            self.log_message.emit(str(exc))
+            self.disconnect_port()
+
+    @Slot(bytes)
+    def send(self, data: bytes) -> None:
+        if self._driver is None:
+            self.command_finished.emit("RTK 发送", False, "设备未连接")
+            return
+        try:
+            written = self._driver.write(data)
+            if written != len(data):
+                raise RuntimeError(f"仅发送 {written}/{len(data)} bytes")
+            self.log_message.emit(f"TX {data.hex(' ').upper()}")
+            self.command_finished.emit("RTK 发送", True, f"{written} bytes")
+        except (Exception, SystemExit) as exc:
+            self.command_finished.emit("RTK 发送", False, str(exc))

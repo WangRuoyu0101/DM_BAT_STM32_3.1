@@ -366,48 +366,6 @@ uint8_t App_CommProtocol_DecodeCS1237ChannelRequest(
   return APP_COMM_CONTROL_RESULT_OK;
 }
 
-uint8_t App_CommProtocol_DecodeRtkWriteRequest(
-  const App_CommFrame *frame,
-  App_CommRtkWriteRequest *request)
-{
-  uint8_t index;
-
-  if ((frame == NULL) || (request == NULL))
-  {
-    return APP_COMM_CONTROL_RESULT_LENGTH_ERROR;
-  }
-  request->seq = (frame->length > 0U) ? frame->data[0] : 0U;
-  request->length = 0U;
-  if ((frame->frame_id != APP_COMM_FRAME_ID_RTK_WRITE_REQUEST) ||
-      (frame->length < 2U) ||
-      (frame->length > APP_COMM_MAX_PAYLOAD_SIZE))
-  {
-    return APP_COMM_CONTROL_RESULT_LENGTH_ERROR;
-  }
-  request->length = (uint8_t)(frame->length - 1U);
-  for (index = 0U; index < request->length; index++)
-  {
-    request->data[index] = frame->data[index + 1U];
-  }
-  return APP_COMM_CONTROL_RESULT_OK;
-}
-
-uint8_t App_CommProtocol_DecodeRtkReadRequest(
-  const App_CommFrame *frame,
-  App_CommRtkReadRequest *request)
-{
-  if ((frame == NULL) || (request == NULL))
-  {
-    return APP_COMM_CONTROL_RESULT_LENGTH_ERROR;
-  }
-  request->seq = (frame->length > 0U) ? frame->data[0] : 0U;
-  if ((frame->frame_id != APP_COMM_FRAME_ID_RTK_READ_REQUEST) || (frame->length != 1U))
-  {
-    return APP_COMM_CONTROL_RESULT_LENGTH_ERROR;
-  }
-  return APP_COMM_CONTROL_RESULT_OK;
-}
-
 uint8_t App_CommProtocol_DecodeFanControlRequest(
   const App_CommFrame *frame,
   App_CommFanControl *control)

@@ -123,14 +123,11 @@ class Uart5SlaveStatusTests(unittest.TestCase):
     def test_status_response_appends_communication_diagnostics(self):
         source = self.read("Core/Src/app_uart5_slave.c")
 
-        self.assertIn("uint8_t payload[29];", source)
-        self.assertIn("App_RtkBridge_GetDiagnostics(&rtk_diagnostics);", source)
+        self.assertIn("uint8_t payload[19];", source)
         self.assertIn("App_Uart5Slave_StoreU32(&payload[7], s_usb_busy_retries);", source)
         self.assertIn("App_Uart5Slave_StoreU32(&payload[11], s_usb_queue_overflows);", source)
         self.assertIn("App_Uart5Slave_StoreU32(&payload[15], s_usb_tx_failures);", source)
-        self.assertIn("App_Uart5Slave_StoreU32(&payload[19], rtk_diagnostics.overflow_bytes);", source)
-        self.assertIn("App_Uart5Slave_StoreU32(&payload[23], rtk_diagnostics.uart_errors);", source)
-        self.assertIn("payload[27] = (uint8_t)(rtk_diagnostics.rx_high_water & 0xFFU);", source)
+        self.assertNotIn("rtk_diagnostics", source)
 
     def test_usb_cdc_can_feed_same_protocol_and_return_responses(self):
         header = self.read("Core/Inc/app_uart5_slave.h")

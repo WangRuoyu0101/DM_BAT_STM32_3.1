@@ -4,8 +4,8 @@
 
 应用业务通信和 bootloader 升级默认使用 USB CDC `/dev/ttyACM0`。
 当前应用固件包含 CS1237 ADC 支持：PB14 为 CLK，PD8 为 DIO/DRDY。
-DM3.1 风扇使用 PA5 PWM、PA6/PA7 双路测速，PE15/PE13 分别为低有效 KEY1/KEY2。
-同时包含 UM982 RTK 分帧透传：USART6 PC6 为 TX，PC7 为 RX，默认 115200 8N1。
+DM3.1 风扇使用 PA5 PWM、PA6/PA7 双路测速，PE15/PE13/PE11 分别为低有效 KEY1/KEY2/KEY3。
+DM3.1 已移除 STM32 USART6 RTK 分帧透传；RTK 由主机通过 CH343P 直连。
 
 ## 目录
 
@@ -82,11 +82,3 @@ ros2 run stm32_jetson_serial_comm serial_link \
 如果 `serial_link --help` 中没有 `--cs1237-query`，说明当前终端仍加载了旧的
 ROS2 安装结果，需要清理本包的 `build/`、`install/` 后重建并重新
 `source install/setup.bash`。
-
-验证 UM982 透传命令入口：
-
-```bash
-ros2 run stm32_jetson_serial_comm stm32_rtk --help
-ros2 run stm32_jetson_serial_comm stm32_rtk \
-  --device /dev/ttyACM0 --send-text "GPGGA 1" --read-seconds 3
-```

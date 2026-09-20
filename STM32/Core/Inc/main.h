@@ -63,6 +63,8 @@ void Error_Handler(void);
 #define FAN_SPEED_1_GPIO_Port GPIOA
 #define FAN_SPEED_2_Pin GPIO_PIN_7
 #define FAN_SPEED_2_GPIO_Port GPIOA
+#define KEY3_Pin GPIO_PIN_11
+#define KEY3_GPIO_Port GPIOE
 #define KEY2_Pin GPIO_PIN_13
 #define KEY2_GPIO_Port GPIOE
 #define KEY1_Pin GPIO_PIN_15

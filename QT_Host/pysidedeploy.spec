@@ -40,11 +40,11 @@ qml_files =
 excluded_qml_plugins =
 
 # qt modules used. comma separated
-modules = Charts,Core,Gui,Widgets
+modules = Charts,Core,DBus,Gui,OpenGL,OpenGLWidgets,Widgets
 
 # qt plugins used by the application. only relevant for desktop deployment
 # for qt plugins used in android application see [android][plugins]
-plugins =
+plugins = accessiblebridge,egldeviceintegrations,generic,iconengines,imageformats,platforminputcontexts,platforms,platforms/darwin,platformthemes,styles,wayland-decoration-client,wayland-graphics-integration-client,wayland-shell-integration,xcbglintegrations
 
 [android]
 

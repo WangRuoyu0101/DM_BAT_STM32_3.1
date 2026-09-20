@@ -23,8 +23,6 @@
 #define APP_COMM_FRAME_ID_BOOTLOADER_REQUEST 0x05U
 #define APP_COMM_FRAME_ID_CS1237_QUERY 0x06U
 #define APP_COMM_FRAME_ID_CS1237_CHANNEL_REQUEST 0x07U
-#define APP_COMM_FRAME_ID_RTK_WRITE_REQUEST 0x08U
-#define APP_COMM_FRAME_ID_RTK_READ_REQUEST 0x09U
 #define APP_COMM_FRAME_ID_FAN_CONTROL_REQUEST 0x0AU
 #define APP_COMM_FRAME_ID_BOARD_IO_QUERY 0x0BU
 #define APP_COMM_FRAME_ID_RGB_SET_REQUEST 0x0CU
@@ -36,8 +34,6 @@
 #define APP_COMM_FRAME_ID_BOOTLOADER_RESPONSE 0x85U
 #define APP_COMM_FRAME_ID_CS1237_RESPONSE 0x86U
 #define APP_COMM_FRAME_ID_CS1237_CHANNEL_RESPONSE 0x87U
-#define APP_COMM_FRAME_ID_RTK_WRITE_RESPONSE 0x88U
-#define APP_COMM_FRAME_ID_RTK_READ_RESPONSE 0x89U
 #define APP_COMM_FRAME_ID_FAN_CONTROL_RESPONSE 0x8AU
 #define APP_COMM_FRAME_ID_BOARD_IO_RESPONSE 0x8BU
 #define APP_COMM_FRAME_ID_RGB_SET_RESPONSE 0x8CU
@@ -67,11 +63,6 @@
 #define APP_COMM_CONTROL_RESULT_INVALID_CHANNEL 0x01U
 #define APP_COMM_CONTROL_RESULT_INVALID_LEVEL 0x02U
 #define APP_COMM_CONTROL_RESULT_LENGTH_ERROR 0x03U
-
-#define APP_COMM_RTK_WRITE_DATA_MAX (APP_COMM_MAX_PAYLOAD_SIZE - 1U)
-#define APP_COMM_RTK_READ_DATA_MAX (APP_COMM_MAX_PAYLOAD_SIZE - 2U)
-#define APP_COMM_RTK_RESULT_OK 0x00U
-#define APP_COMM_RTK_RESULT_UART_ERROR 0x01U
 
 typedef struct
 {
@@ -116,18 +107,6 @@ typedef struct
   uint8_t seq;
   uint8_t channel;
 } App_CommCS1237ChannelRequest;
-
-typedef struct
-{
-  uint8_t seq;
-  uint8_t length;
-  uint8_t data[APP_COMM_RTK_WRITE_DATA_MAX];
-} App_CommRtkWriteRequest;
-
-typedef struct
-{
-  uint8_t seq;
-} App_CommRtkReadRequest;
 
 typedef struct
 {
@@ -219,12 +198,6 @@ uint8_t App_CommProtocol_DecodeCS1237Query(
 uint8_t App_CommProtocol_DecodeCS1237ChannelRequest(
   const App_CommFrame *frame,
   App_CommCS1237ChannelRequest *request);
-uint8_t App_CommProtocol_DecodeRtkWriteRequest(
-  const App_CommFrame *frame,
-  App_CommRtkWriteRequest *request);
-uint8_t App_CommProtocol_DecodeRtkReadRequest(
-  const App_CommFrame *frame,
-  App_CommRtkReadRequest *request);
 uint8_t App_CommProtocol_DecodeFanControlRequest(
   const App_CommFrame *frame,
   App_CommFanControl *control);

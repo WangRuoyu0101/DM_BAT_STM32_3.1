@@ -23,7 +23,6 @@
 #include "app_periodic_tick.h"
 #include "app_relay_control.h"
 #include "app_rgb_led.h"
-#include "app_rtk_bridge.h"
 #include "app_status_led.h"
 #include "app_ultrasonic_manager.h"
 #include "app_uart5_slave.h"
@@ -60,7 +59,6 @@ UART_HandleTypeDef huart5;
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
-UART_HandleTypeDef huart6;
 
 /* USER CODE BEGIN PV */
 
@@ -77,7 +75,6 @@ static void MX_UART5_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART3_UART_Init(void);
-static void MX_USART6_UART_Init(void);
 /* USER CODE BEGIN PFP */
 static void App_ForceUsbDisconnect(void);
 
@@ -142,14 +139,9 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
-  MX_USART6_UART_Init();
   App_ForceUsbDisconnect();
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
-  if (App_RtkBridge_Init(&huart6) != HAL_OK)
-  {
-    Error_Handler();
-  }
   if (App_CS1237_Init() != APP_CS1237_RESULT_OK)
   {
     /* Keep the rest of the board operational; the snapshot reports the error. */
@@ -263,7 +255,7 @@ static void MX_TIM2_Init(void)
     Error_Handler();
   }
   config.OCMode = TIM_OCMODE_PWM1;
-  config.Pulse = 1680;
+  config.Pulse = 3360;
   config.OCPolarity = TIM_OCPOLARITY_HIGH;
   config.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim2, &config, TIM_CHANNEL_1) != HAL_OK)
@@ -499,39 +491,6 @@ static void MX_USART3_UART_Init(void)
 }
 
 /**
-  * @brief USART6 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART6_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART6_Init 0 */
-
-  /* USER CODE END USART6_Init 0 */
-
-  /* USER CODE BEGIN USART6_Init 1 */
-
-  /* USER CODE END USART6_Init 1 */
-  huart6.Instance = USART6;
-  huart6.Init.BaudRate = 115200;
-  huart6.Init.WordLength = UART_WORDLENGTH_8B;
-  huart6.Init.StopBits = UART_STOPBITS_1;
-  huart6.Init.Parity = UART_PARITY_NONE;
-  huart6.Init.Mode = UART_MODE_TX_RX;
-  huart6.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart6.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart6) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART6_Init 2 */
-
-  /* USER CODE END USART6_Init 2 */
-
-}
-
-/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -563,8 +522,8 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOE, GPIO_PIN_7|GPIO_PIN_9|GPIO_PIN_12, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : KEY2_Pin KEY1_Pin */
-  GPIO_InitStruct.Pin = KEY2_Pin|KEY1_Pin;
+  /*Configure GPIO pins : KEY3_Pin KEY2_Pin KEY1_Pin */
+  GPIO_InitStruct.Pin = KEY3_Pin|KEY2_Pin|KEY1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);

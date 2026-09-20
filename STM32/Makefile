@@ -48,7 +48,6 @@ Core/Src/app_periodic_tick.c \
 Core/Src/app_relay_control.c \
 Core/Src/app_rgb_led.c \
 Core/Src/app_rgb_protocol.c \
-Core/Src/app_rtk_bridge.c \
 Core/Src/app_status_led.c \
 Core/Src/app_ultrasonic_manager.c \
 Core/Src/app_ultrasonic_protocol.c \

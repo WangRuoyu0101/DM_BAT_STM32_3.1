@@ -21,6 +21,7 @@ class BoardIOTest(unittest.TestCase):
         self.assertIn("FAN_SPEED_2_Pin GPIO_PIN_7", main_h)
         self.assertIn("KEY1_Pin GPIO_PIN_15", main_h)
         self.assertIn("KEY2_Pin GPIO_PIN_13", main_h)
+        self.assertIn("KEY3_Pin GPIO_PIN_11", main_h)
         self.assertIn("htim2.Init.Period = 3359", main_c)
         self.assertIn("htim3.Init.Prescaler = 839", main_c)
         self.assertIn("HAL_TIM_PWM_Init(&htim2)", main_c)
@@ -33,6 +34,7 @@ class BoardIOTest(unittest.TestCase):
         self.assertIn("PA7.Signal=TIM3_CH2", ioc)
         self.assertIn("PE13.GPIO_PuPd=GPIO_PULLUP", ioc)
         self.assertIn("PE15.GPIO_PuPd=GPIO_PULLUP", ioc)
+        self.assertIn("PE11.GPIO_PuPd=GPIO_PULLUP", ioc)
 
     def test_board_io_module_implements_four_levels_tach_and_debounce(self):
         header = self.read("Core/Inc/app_board_io.h")
@@ -40,7 +42,7 @@ class BoardIOTest(unittest.TestCase):
         main_c = self.read("Core/Src/main.c")
         makefile = self.read("Makefile")
 
-        self.assertIn("APP_BOARD_IO_DEFAULT_FAN_LEVEL 2U", header)
+        self.assertIn("APP_BOARD_IO_DEFAULT_FAN_LEVEL 4U", header)
         self.assertIn("APP_BOARD_IO_FAN_PULSES_PER_REV 2U", header)
         self.assertIn("APP_BOARD_IO_KEY_DEBOUNCE_TICKS 10U", header)
         self.assertIn("APP_BOARD_IO_TACH_TIMEOUT_TICKS 750U", header)
@@ -51,6 +53,8 @@ class BoardIOTest(unittest.TestCase):
         self.assertIn("HAL_TIM_ReadCapturedValue", source)
         self.assertIn("APP_BOARD_IO_FAN_PULSES_PER_REV", source)
         self.assertIn("GPIO_PIN_RESET", source)
+        self.assertIn("HAL_GPIO_ReadPin(KEY3_GPIO_Port, KEY3_Pin)", source)
+        self.assertIn("s_key_stable[2] << 2U", source)
         self.assertIn("App_BoardIO_Init(&htim2, &htim3)", main_c)
         self.assertIn("App_BoardIO_Run(current_tick);", main_c)
         self.assertIn("Core/Src/app_board_io.c", makefile)
