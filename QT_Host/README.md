@@ -26,13 +26,32 @@ macOS USB CDC 通常显示为 `/dev/cu.usbmodem*`。
 
 ## Windows 运行与打包
 
+推荐使用一键脚本。脚本会暂存整个仓库的本地修改（包含未跟踪文件）、以仅快进方式拉取
+当前分支、恢复本地修改、清理 macOS 元数据、准备虚拟环境、运行测试并生成 exe：
+
 ```powershell
-cd QT_Host
-py -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python main.py
-pyside6-deploy -c pysidedeploy.spec
+cd E:\DMWorkSpace\DM3.1-BAT\QT_Host
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\update_and_build_windows.ps1
+```
+
+`-ExecutionPolicy Bypass` 只作用于本次进程，不修改系统执行策略。脚本要求当前分支已经配置
+Git 上游；拉取使用 `git pull --ff-only`，不会自动创建合并提交。如果恢复本地修改时出现冲突，
+脚本会停止，Git 会保留相应 stash 供人工处理。
+
+只构建当前工作区、不拉取 GitHub 时：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\update_and_build_windows.ps1 -SkipPull
+```
+
+首次运行需要能够访问 Python 包索引；脚本会在缺少 `.venv` 时使用系统 `python.exe`
+自动创建虚拟环境。Windows 使用独立的 `pysidedeploy.windows.spec` 模板，构建过程产生的
+机器绝对路径只写入临时配置，不会污染跨平台共享的部署配置。
+
+如需手动运行界面：
+
+```powershell
+.venv\Scripts\python.exe main.py
 ```
 
 设备显示为 `COMx`。Windows 可执行产物必须在 Windows 上构建和实测。

@@ -11,6 +11,7 @@ toolchains/
 *.swp
 *.swo
 Thumbs.db
+._*
 
 # Python / Qt local output
 .venv/
@@ -19,6 +20,8 @@ __pycache__/
 *.egg-info/
 deployment/
 dist/
+nuitka-crash-report.xml
+.pysidedeploy.*.local.spec
 
 # Local agent and scratch data
 .superpowers/
