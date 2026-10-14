@@ -38,9 +38,9 @@ class Uart5SlaveStatusTests(unittest.TestCase):
 
         self.assertIn("#ifndef APP_UART5_SLAVE_H", header)
         self.assertIn('#include "app_comm_protocol.h"', header)
-        self.assertIn("HAL_StatusTypeDef App_Uart5Slave_Init(UART_HandleTypeDef *huart);", header)
+        self.assertIn("HAL_StatusTypeDef App_Uart5Slave_Init(void);", header)
         self.assertIn("void App_Uart5Slave_Run(uint32_t current_tick);", header)
-        self.assertIn("void App_Uart5Slave_HandleRxCplt(UART_HandleTypeDef *huart);", header)
+        self.assertNotIn("App_Uart5Slave_HandleRxCplt", header)
         self.assertIn('#include "app_uart5_slave.h"', source)
         self.assertIn("App_CommParser", source)
         self.assertIn("Core/Src/app_uart5_slave.c", makefile)
@@ -54,10 +54,10 @@ class Uart5SlaveStatusTests(unittest.TestCase):
         self.assertIn("static void App_ForceUsbDisconnect(void);", main)
         self.assertIn("App_ForceUsbDisconnect();", main)
         self.assertIn("HAL_GPIO_WritePin(GPIOA, GPIO_PIN_12, GPIO_PIN_RESET);", main)
-        self.assertIn("App_Uart5Slave_Init(&huart5)", main)
+        self.assertIn("App_Uart5Slave_Init()", main)
         self.assertIn("Error_Handler();", self.extract_braced_block(
             uncommented_main,
-            r"\bif\s*\(\s*App_Uart5Slave_Init\s*\(\s*&huart5\s*\)\s*!=\s*HAL_OK\s*\)",
+            r"\bif\s*\(\s*App_Uart5Slave_Init\s*\(\s*\)\s*!=\s*HAL_OK\s*\)",
         ))
 
         main_body = self.extract_braced_block(uncommented_main, r"\bint\s+main\s*\(\s*void\s*\)")
@@ -75,33 +75,18 @@ class Uart5SlaveStatusTests(unittest.TestCase):
         ultrasonic_index = main_loop.index("App_UltrasonicManager_Run(current_tick);")
         self.assertLess(fast_index, ultrasonic_index)
 
-    def test_uart5_irq_is_enabled_and_routed_to_hal(self):
+    def test_unused_uart5_irq_is_removed(self):
         interrupts = self.read("Core/Src/stm32f4xx_it.c")
         msp = self.read("Core/Src/stm32f4xx_hal_msp.c")
 
-        self.assertIn("extern UART_HandleTypeDef huart5;", interrupts)
-        self.assertIn("void UART5_IRQHandler(void)", interrupts)
-        self.assertIn("HAL_UART_IRQHandler(&huart5);", interrupts)
-        self.assertIn("HAL_NVIC_SetPriority(UART5_IRQn", msp)
-        self.assertIn("HAL_NVIC_EnableIRQ(UART5_IRQn);", msp)
-        self.assertIn("HAL_NVIC_DisableIRQ(UART5_IRQn);", msp)
+        self.assertNotIn("huart5", interrupts)
+        self.assertNotIn("UART5_IRQHandler", interrupts)
+        self.assertNotIn("UART5_IRQn", msp)
 
-    def test_uart5_rx_callback_dispatches_to_app_module(self):
-        source = self.read("Core/Src/app_uart5_slave.c")
-        uncommented_source = self.strip_c_comments(source)
-
-        callback = self.extract_braced_block(
-            uncommented_source,
-            r"\bvoid\s+HAL_UART_RxCpltCallback\s*\(\s*UART_HandleTypeDef\s*\*\s*huart\s*\)",
-        )
-        self.assertIn("App_Uart5Slave_HandleRxCplt(huart);", callback)
-
-        handler = self.extract_braced_block(
-            uncommented_source,
-            r"\bvoid\s+App_Uart5Slave_HandleRxCplt\s*\(\s*UART_HandleTypeDef\s*\*\s*huart\s*\)",
-        )
-        self.assertIn("huart->Instance != UART5", handler)
-        self.assertIn("HAL_UART_Receive_IT(s_uart5, &s_rx_byte, 1U);", handler)
+    def test_uart_rx_callback_only_dispatches_ultrasonic_ports(self):
+        source = self.read("Core/Src/app_ultrasonic_manager.c")
+        self.assertIn("void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)", source)
+        self.assertIn("App_UltrasonicManager_HandleRxCplt(huart);", source)
 
     def test_status_protocol_uses_binary_frames(self):
         source = self.read("Core/Src/app_uart5_slave.c")
@@ -109,7 +94,7 @@ class Uart5SlaveStatusTests(unittest.TestCase):
         self.assertIn("APP_COMM_FRAME_ID_STATUS_QUERY", source)
         self.assertIn("APP_COMM_FRAME_ID_STATUS_RESPONSE", source)
         self.assertIn("APP_COMM_FRAME_ID_ERROR_RESPONSE", source)
-        self.assertIn("App_CommProtocol_ParseByte(&s_parser, s_rx_byte, &s_rx_frame)", source)
+        self.assertIn("App_CommProtocol_ParseByte(&s_usb_parser", source)
         self.assertIn("App_CommProtocol_Encode(", source)
         self.assertIn("App_CommProtocol_DecodeStatusQuery(frame, &status_query)", source)
         self.assertIn("payload[0] = seq;", source)
@@ -118,7 +103,7 @@ class Uart5SlaveStatusTests(unittest.TestCase):
         self.assertIn("payload[6] = App_RelayControl_GetBitmap();", source)
         self.assertNotIn('"STATUS?"', source)
         self.assertNotIn('"DM3.1_BAT,OK', source)
-        self.assertIn("HAL_UART_Transmit(s_uart5", source)
+        self.assertNotIn("HAL_UART_Transmit", source)
 
     def test_status_response_appends_communication_diagnostics(self):
         source = self.read("Core/Src/app_uart5_slave.c")
@@ -170,7 +155,7 @@ class Uart5SlaveStatusTests(unittest.TestCase):
         )
 
         self.assertIn("APP_COMM_FRAME_ID_GPIO_CONTROL_REQUEST", fast_handler)
-        self.assertIn("s_frame_ready = 0U;", fast_handler)
+        self.assertIn("s_usb_frame_ready = 0U;", fast_handler)
         self.assertIn("App_CommProtocol_DecodeGpioControlRequest(&frame, &control)", fast_handler)
         self.assertIn("App_RelayControl_Apply(&control, current_tick)", fast_handler)
         self.assertIn("App_Uart5Slave_SendControlResponse(control.seq, control.channel_id, result);", fast_handler)

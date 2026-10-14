@@ -1,6 +1,6 @@
 # Jetson 与 STM32 通信
 
-`stm32_jetson_serial_comm` 是 Jetson 侧 ROS2 Python 包，默认通过 USB CDC 虚拟串口与 STM32 电源板通信，并保留 UART5 作为备用通信口。本文档仅保留 Jetson 端部署、运行、调试，以及开发机与 Jetson 之间的同步/拉取流程。
+`stm32_jetson_serial_comm` 是 Jetson 侧 ROS2 Python 包，通过 USB CDC 虚拟串口与 STM32 电源板通信。本文档仅保留 Jetson 端部署、运行、调试，以及开发机与 Jetson 之间的同步/拉取流程。
 
 ## 目录
 
@@ -23,7 +23,7 @@
 
 ## 功能概览
 
-- USB CDC/UART5 二进制帧协议打包、解析和 CRC8 校验。
+- USB CDC 二进制帧协议打包、解析和 CRC8 校验。
 - Jetson 端串口链路验证和原始十六进制调试。
 - STM32 综合状态、GPIO 状态、三路超声波距离查询。
 - CS1237 原始 ADC 查询、运行时通道切换、温度/力值换算和 Jetson 本地标定。
@@ -35,7 +35,6 @@
 
 - 应用业务通信默认设备为 `/dev/ttyACM0`，可用 `STM32_SERIAL_DEVICE` 覆盖。
 - Bootloader 升级默认设备为 `/dev/ttyACM0`，可用 `STM32_BOOTLOADER_DEVICE` 覆盖。
-- UART5 与 USB CDC 使用同一套应用协议；UART5 可作为备用链路。
 
 ## 目录规范
 
@@ -51,7 +50,7 @@ Linux_ROS_WS/
         bootloader.py        bootloader 协议客户端
         cs1237.py            温度/力值换算和标定文件读写
         bootloader_cli.py    stm32_bootloader 命令入口
-        protocol.py          UART5 应用协议编解码
+        protocol.py          USB CDC 应用协议编解码
         serial_driver.py     pyserial 驱动封装
         serial_host.py       主机侧帧收发封装
         serial_link_cli.py   serial_link 命令入口
@@ -65,24 +64,12 @@ Linux_ROS_WS/
 | 项目              | 配置           |
 | ----------------- | -------------- |
 | 默认应用通信      | `/dev/ttyACM0` |
-| 备用串口          | `/dev/ttyTHS0` / UART5 |
 | 应用通信波特率    | 115200         |
-| Bootloader 波特率 | 460800         |
 | 数据格式          | 8N1，无流控    |
-| STM32 UART5 TX    | PC12           |
-| STM32 UART5 RX    | PD2            |
-| CS1237 CLK        | STM32 PB14      |
-| CS1237 DIO/DRDY   | STM32 PD8       |
+| CS1237 CLK        | STM32 PC9       |
+| CS1237 DIO/DRDY   | STM32 PC8       |
 
-应用业务和 bootloader 升级默认通过 USB CDC 虚拟串口通信。UART5 仍保留为备用通信口，接线需要交叉并共地：
-
-```text
-Jetson TX  -> STM32 PD2  / UART5_RX
-Jetson RX  <- STM32 PC12 / UART5_TX
-Jetson GND -> STM32 GND
-```
-
-双方均使用 3.3V TTL 电平，不要直接接 RS232 电平。
+应用业务和 bootloader 升级均通过 USB CDC 虚拟串口通信，第四版硬件不再引出 STM32 UART5 备用链路。
 
 ## Jetson 环境准备
 
@@ -100,7 +87,7 @@ ls -l /dev/ttyTHS* /dev/ttyUSB* /dev/ttyACM*
 id
 ```
 
-`id` 输出中应包含 `dialout`。默认使用 `/dev/ttyACM0`；如果使用 UART5 备用口，且 `/dev/ttyTHS0` 不存在，需要确认 Jetson 对应 UART 已在系统配置或设备树中启用。
+`id` 输出中应包含 `dialout`。默认使用 `/dev/ttyACM0`；批量部署建议按 VID/PID 与 USB 物理端口生成稳定的 udev 软链接，不要依赖 ACM 序号。
 
 ## 同步到 Jetson
 
@@ -191,15 +178,6 @@ ros2 run stm32_jetson_serial_comm serial_link \
   --read-seconds 3
 ```
 
-如需验证 UART5 备用口，可先短接 Jetson 串口 TX/RX：
-
-```bash
-ros2 run stm32_jetson_serial_comm serial_link \
-  --device /dev/ttyACM0 \
-  --baudrate 115200 \
-  --loopback-test
-```
-
 正常响应示例：
 
 ```text
@@ -212,7 +190,7 @@ RX 12 bytes: AA 55 81 07 10 ... CRC
 
 ## WS2812B RGB
 
-STM32 的 `PB13` 驱动三颗 DIN 到 DOUT 级联的 WS2812B，主机仍按一个逻辑像素控制，
+STM32 的 `PD10` 驱动三颗 DIN 到 DOUT 级联的 WS2812B，主机仍按一个逻辑像素控制，
 固件向三颗灯发送相同颜色，因此三颗灯始终同步。设备上电默认绿色 `#00FF00`、
 25% 亮度、1 Hz 慢闪；RGB 设置
 仅保存在 STM32 RAM，复位后恢复默认值。
@@ -228,7 +206,7 @@ STM32 的 `PB13` 驱动三颗 DIN 到 DOUT 级联的 WS2812B，主机仍按一�
 （2 Hz）、4 快闪（约 4 Hz）；`output_on` 表示当前亮/灭相位。Python 包提供
 `set_rgb()` 与 `query_rgb()`，输入参数在写串口前校验。
 
-当前原理图没有 PB13 的 3.3 V -> 5 V 电平转换。实板应先示波器验收 800 kHz
+当前原理图没有 PD10 的 3.3 V -> 5 V 电平转换。实板应先示波器验收 800 kHz
 波形、0/1 高电平宽度与至少 100 us 的复位低电平；若信号余量不稳定，增加
 `74AHCT`/`74HCT` 电平转换缓冲器后再继续调试。
 
@@ -376,7 +354,7 @@ ros2 run stm32_jetson_serial_comm stm32_gpio bee off
 默认应用通信口为 `/dev/ttyACM0`，默认波特率为 `115200`。可用 `STM32_SERIAL_DEVICE` 改默认设备，或通过 `--device` 临时指定：
 
 ```bash
-export STM32_SERIAL_DEVICE=/dev/ttyTHS0
+export STM32_SERIAL_DEVICE=/dev/stm32cdc
 ros2 run stm32_jetson_serial_comm stm32_gpio sound on
 ros2 run stm32_jetson_serial_comm stm32_gpio sound on --device /dev/ttyACM0
 ```
@@ -391,6 +369,8 @@ ros2 run stm32_jetson_serial_comm stm32_gpio sound on --device /dev/ttyACM0
 | `motor`      | `SIGNAL-MOTOR`       | `0x04`     |
 | `flash`      | `SIGNAL-FLASH`        | `0x05`     |
 | `sound`      | `SIGNAL-SOUND`       | `0x06`     |
+
+应用启动后 `sound` 对应的音频功放使能默认为高电平；`bee` 对应的声光报警输出自动保持高电平 1 秒。如果主机下发相应通道的控制命令，则以主机命令为准。
 
 输出状态支持 `on/off`、`high/low` 和 `1/0`。成功响应示例：
 
@@ -645,7 +625,7 @@ python3 -m unittest tests/test_cs1237.py tests/test_messages.py tests/test_seria
 
 ## 协议参考
 
-STM32 UART5 应用协议、bootloader 协议、Flash 分区、固件生成和烧录说明统一维护在仓库根目录的：
+STM32 USB CDC 应用协议、bootloader 协议、Flash 分区、固件生成和烧录说明统一维护在仓库根目录的：
 
 ```text
 STM32/README.md

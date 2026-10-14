@@ -7,7 +7,6 @@
 #include <stdint.h>
 #include <string.h>
 
-#define APP_UART5_SLAVE_TX_TIMEOUT_MS 20U
 #define APP_UART5_SLAVE_STATUS_OK 0x00U
 #define APP_UART5_SLAVE_BOOTLOADER_RESULT_OK 0x00U
 #define APP_UART5_SLAVE_BOOTLOADER_RESET_DELAY_TICKS 250U
@@ -16,12 +15,6 @@
 #define APP_UART5_SLAVE_USB_TX_QUEUE_DEPTH 2U
 #define APP_UART5_SLAVE_USB_TX_FRAME_SIZE (APP_COMM_FRAME_OVERHEAD + APP_COMM_MAX_PAYLOAD_SIZE)
 
-typedef enum
-{
-  APP_UART5_SLAVE_PORT_UART5 = 0U,
-  APP_UART5_SLAVE_PORT_USB = 1U
-} App_Uart5SlavePort;
-
 typedef struct
 {
   uint16_t length;
@@ -29,17 +22,10 @@ typedef struct
 } App_Uart5SlaveUsbTxFrame;
 
 /*
- * UART5 应用协议从机。
- * 中断上下文只接收字节、喂给协议解析器并记录一帧结果；
- * 主循环再读取缓存帧并执行业务响应，避免在中断中做 HAL_UART_Transmit 等阻塞操作。
+ * USB CDC 应用协议从机。
+ * USB 回调只接收字节、喂给协议解析器并记录一帧结果；
+ * 主循环再读取缓存帧并执行业务响应。
  */
-static UART_HandleTypeDef *s_uart5 = NULL;
-static uint8_t s_rx_byte = 0U;
-static App_CommParser s_parser;
-static App_CommFrame s_rx_frame;
-static volatile uint8_t s_frame_ready = 0U;
-static volatile uint8_t s_error_ready = 0U;
-static volatile uint8_t s_error_code = 0U;
 static App_CommParser s_usb_parser;
 static App_CommFrame s_usb_rx_frame;
 static volatile uint8_t s_usb_frame_ready = 0U;
@@ -52,7 +38,6 @@ static volatile uint8_t s_usb_tx_in_flight = 0U;
 static uint32_t s_usb_busy_retries = 0U;
 static uint32_t s_usb_queue_overflows = 0U;
 static uint32_t s_usb_tx_failures = 0U;
-static App_Uart5SlavePort s_response_port = APP_UART5_SLAVE_PORT_UART5;
 static uint8_t s_bootloader_reset_pending = 0U;
 static uint32_t s_bootloader_reset_start_tick = 0U;
 static uint32_t s_bootloader_led_last_tick = 0U;
@@ -129,7 +114,7 @@ static void App_Uart5Slave_PumpUsbTx(void)
 }
 
 /**
-  * @brief 通过 UART5 发送一帧协议数据。
+  * @brief 通过 USB CDC 发送一帧协议数据。
   * @param frame_id 响应帧ID。
   * @param payload 响应数据区指针，长度为 0 时可为 NULL。
   * @param length 响应数据区长度。
@@ -143,14 +128,7 @@ static void App_Uart5Slave_SendFrame(uint8_t frame_id, const uint8_t *payload, u
   tx_size = App_CommProtocol_Encode(frame_id, payload, length, tx_buffer, sizeof(tx_buffer));
   if (tx_size > 0U)
   {
-    if (s_response_port == APP_UART5_SLAVE_PORT_USB)
-    {
-      App_Uart5Slave_QueueUsbFrame(tx_buffer, (uint16_t)tx_size);
-    }
-    else
-    {
-      (void)HAL_UART_Transmit(s_uart5, tx_buffer, (uint16_t)tx_size, APP_UART5_SLAVE_TX_TIMEOUT_MS);
-    }
+    App_Uart5Slave_QueueUsbFrame(tx_buffer, (uint16_t)tx_size);
   }
 }
 
@@ -543,22 +521,11 @@ static void App_Uart5Slave_ProcessFrame(const App_CommFrame *frame, uint32_t cur
 }
 
 /**
-  * @brief 初始化 UART5 从机通信模块。
-  * @param huart UART5 句柄指针。
-  * @retval HAL_OK 表示初始化并启动接收成功，其他值表示失败。
+  * @brief 初始化 USB CDC 从机通信模块。
+  * @retval HAL_OK 表示初始化成功。
   */
-HAL_StatusTypeDef App_Uart5Slave_Init(UART_HandleTypeDef *huart)
+HAL_StatusTypeDef App_Uart5Slave_Init(void)
 {
-  if ((huart == NULL) || (huart->Instance != UART5))
-  {
-    return HAL_ERROR;
-  }
-
-  s_uart5 = huart;
-  s_rx_byte = 0U;
-  s_frame_ready = 0U;
-  s_error_ready = 0U;
-  s_error_code = 0U;
   s_usb_frame_ready = 0U;
   s_usb_error_ready = 0U;
   s_usb_error_code = 0U;
@@ -568,15 +535,11 @@ HAL_StatusTypeDef App_Uart5Slave_Init(UART_HandleTypeDef *huart)
   s_usb_busy_retries = 0U;
   s_usb_queue_overflows = 0U;
   s_usb_tx_failures = 0U;
-  s_response_port = APP_UART5_SLAVE_PORT_UART5;
   s_bootloader_reset_pending = 0U;
   s_bootloader_reset_start_tick = 0U;
   s_bootloader_led_last_tick = 0U;
-  App_CommProtocol_InitParser(&s_parser);
   App_CommProtocol_InitParser(&s_usb_parser);
-
-  /* 采用单字节接收，便于协议层在连续字节流中寻找帧头。 */
-  return HAL_UART_Receive_IT(s_uart5, &s_rx_byte, 1U);
+  return HAL_OK;
 }
 
 /**
@@ -592,18 +555,18 @@ void App_Uart5Slave_RunFastGpio(uint32_t current_tick)
   uint8_t result;
   uint32_t primask;
 
-  if ((s_uart5 == NULL) || (s_bootloader_reset_pending != 0U))
+  if (s_bootloader_reset_pending != 0U)
   {
     return;
   }
 
   primask = __get_PRIMASK();
   __disable_irq();
-  frame = s_rx_frame;
-  frame_ready = s_frame_ready;
+  frame = s_usb_rx_frame;
+  frame_ready = s_usb_frame_ready;
   if ((frame_ready != 0U) && (frame.frame_id == APP_COMM_FRAME_ID_GPIO_CONTROL_REQUEST))
   {
-    s_frame_ready = 0U;
+    s_usb_frame_ready = 0U;
   }
   else
   {
@@ -623,7 +586,6 @@ void App_Uart5Slave_RunFastGpio(uint32_t current_tick)
     result = App_RelayControl_Apply(&control, current_tick);
   }
 
-  s_response_port = APP_UART5_SLAVE_PORT_UART5;
   App_Uart5Slave_SendControlResponse(control.seq, control.channel_id, result);
 }
 
@@ -640,41 +602,11 @@ void App_Uart5Slave_Run(uint32_t current_tick)
   uint8_t frame_ready = 0U;
   uint32_t primask;
 
-  if (s_uart5 == NULL)
-  {
-    return;
-  }
-
   App_Uart5Slave_PumpUsbTx();
   App_Uart5Slave_RunBootloaderReset(current_tick);
   if (s_bootloader_reset_pending != 0U)
   {
     return;
-  }
-
-  /* 与 UART 接收中断共享解析结果，复制后再在主循环中发送响应。 */
-  primask = __get_PRIMASK();
-  __disable_irq();
-  frame = s_rx_frame;
-  frame_ready = s_frame_ready;
-  error_ready = s_error_ready;
-  error_code = s_error_code;
-  s_frame_ready = 0U;
-  s_error_ready = 0U;
-  s_error_code = 0U;
-  __set_PRIMASK(primask);
-
-  if (error_ready != 0U)
-  {
-    s_response_port = APP_UART5_SLAVE_PORT_UART5;
-    App_Uart5Slave_SendError(0U, 0U, error_code);
-    return;
-  }
-
-  if (frame_ready != 0U)
-  {
-    s_response_port = APP_UART5_SLAVE_PORT_UART5;
-    App_Uart5Slave_ProcessFrame(&frame, current_tick);
   }
 
   primask = __get_PRIMASK();
@@ -690,19 +622,15 @@ void App_Uart5Slave_Run(uint32_t current_tick)
 
   if (error_ready != 0U)
   {
-    s_response_port = APP_UART5_SLAVE_PORT_USB;
     App_Uart5Slave_SendError(0U, 0U, error_code);
-    s_response_port = APP_UART5_SLAVE_PORT_UART5;
     return;
   }
 
   if (frame_ready != 0U)
   {
-    s_response_port = APP_UART5_SLAVE_PORT_USB;
     App_Uart5Slave_ProcessFrame(&frame, current_tick);
   }
 
-  s_response_port = APP_UART5_SLAVE_PORT_UART5;
   App_Uart5Slave_PumpUsbTx();
 }
 
@@ -753,53 +681,4 @@ void App_Uart5Slave_HandleUsbTxComplete(void)
     s_usb_tx_count--;
     s_usb_tx_in_flight = 0U;
   }
-}
-
-/**
-  * @brief UART 接收完成回调的业务处理入口。
-  * @param huart 触发接收完成的 UART 句柄指针。
-  * @retval None
-  */
-void App_Uart5Slave_HandleRxCplt(UART_HandleTypeDef *huart)
-{
-  if ((s_uart5 == NULL) || (huart == NULL) || (huart->Instance != UART5))
-  {
-    return;
-  }
-
-  if ((s_frame_ready == 0U) && (s_error_ready == 0U))
-  {
-    App_CommParseResult result;
-
-    result = App_CommProtocol_ParseByte(&s_parser, s_rx_byte, &s_rx_frame);
-    if (result == APP_COMM_PARSE_FRAME_READY)
-    {
-      s_frame_ready = 1U;
-    }
-    else if (result == APP_COMM_PARSE_CHECKSUM_ERROR)
-    {
-      s_error_code = APP_COMM_ERROR_CODE_CHECKSUM;
-      s_error_ready = 1U;
-    }
-    else if (result == APP_COMM_PARSE_LENGTH_ERROR)
-    {
-      s_error_code = APP_COMM_ERROR_CODE_LENGTH;
-      s_error_ready = 1U;
-    }
-  }
-
-  /* 每处理完一个字节都重新打开 UART5 接收中断，持续解析主机帧。 */
-  (void)HAL_UART_Receive_IT(s_uart5, &s_rx_byte, 1U);
-}
-
-/**
-  * @brief HAL UART 接收完成公共回调函数。
-  * @param huart 触发接收完成的 UART 句柄指针。
-  * @retval None
-  */
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-  /* HAL 公共回调分发到各用户模块，模块内部按串口实例自行过滤。 */
-  App_Uart5Slave_HandleRxCplt(huart);
-  App_UltrasonicManager_HandleRxCplt(huart);
 }

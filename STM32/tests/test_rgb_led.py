@@ -11,16 +11,16 @@ class RgbLedTest(unittest.TestCase):
     def read(self, path):
         return (ROOT / path).read_text(encoding="utf-8")
 
-    def test_ws2812_driver_and_pb13_wiring(self):
+    def test_ws2812_driver_and_pd10_wiring(self):
         main_h = self.read("Core/Inc/main.h")
         main_c = self.read("Core/Src/main.c")
         ioc = self.read("DM3.1_BAT.ioc")
         makefile = self.read("Makefile")
 
-        self.assertIn("RGB_Pin GPIO_PIN_13", main_h)
-        self.assertIn("RGB_GPIO_Port GPIOB", main_h)
-        self.assertIn("PB13.GPIO_Label=RGB", ioc)
-        self.assertIn("PB13.Signal=GPIO_Output", ioc)
+        self.assertIn("RGB_Pin GPIO_PIN_10", main_h)
+        self.assertIn("RGB_GPIO_Port GPIOD", main_h)
+        self.assertIn("PD10.GPIO_Label=RGB", ioc)
+        self.assertIn("PD10.Signal=GPIO_Output", ioc)
         self.assertIn("Core/Src/app_rgb_led.c", makefile)
         self.assertIn("App_RgbLed_Init();", main_c)
         self.assertIn("App_RgbLed_Run(current_tick);", main_c)

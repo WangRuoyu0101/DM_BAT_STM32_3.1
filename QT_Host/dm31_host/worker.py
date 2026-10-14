@@ -338,7 +338,38 @@ class SerialWorker(QObject):
 
     @staticmethod
     def _is_usb_disconnect(exc: BaseException) -> bool:
-        return getattr(exc, "errno", None) in {5, 6, 19}
+        """Recognize USB removal errors even when pyserial wraps the OSError.
+
+        On macOS, pyserial commonly raises ``SerialException`` with a textual
+        ``[Errno 6] Device not configured`` message but leaves ``errno`` unset.
+        The STM32 deliberately disconnects USB after accepting JUMP, so that
+        wrapped exception is expected while the application re-enumerates.
+        """
+        disconnect_errnos = {5, 6, 19}
+        disconnect_markers = (
+            "[errno 5]",
+            "[errno 6]",
+            "[errno 19]",
+            "input/output error",
+            "device not configured",
+            "no such device",
+        )
+        pending: list[BaseException] = [exc]
+        visited: set[int] = set()
+        while pending:
+            current = pending.pop()
+            if id(current) in visited:
+                continue
+            visited.add(id(current))
+            if getattr(current, "errno", None) in disconnect_errnos:
+                return True
+            message = str(current).lower()
+            if any(marker in message for marker in disconnect_markers):
+                return True
+            for linked in (current.__cause__, current.__context__):
+                if linked is not None:
+                    pending.append(linked)
+        return False
 
     @Slot(str, bool)
     def upgrade(self, image_path: str, request_from_app: bool = True) -> None:

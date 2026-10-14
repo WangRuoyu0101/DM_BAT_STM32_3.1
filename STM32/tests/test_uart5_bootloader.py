@@ -66,8 +66,8 @@ class Uart5BootloaderTests(unittest.TestCase):
     def test_bootloader_config_defines_protocol_and_limits(self):
         config = self.read("Bootloader/Core/Inc/bootloader_config.h")
 
-        self.assertIn("#define BOOTLOADER_UART_BAUDRATE 460800U", config)
-        self.assertIn("#define BOOTLOADER_HANDSHAKE_TIMEOUT_MS 2000U", config)
+        self.assertNotIn("BOOTLOADER_UART_BAUDRATE", config)
+        self.assertNotIn("BOOTLOADER_HANDSHAKE_TIMEOUT_MS", config)
         self.assertIn("#define BOOTLOADER_FRAME_ID_HELLO 0x10U", config)
         self.assertIn("#define BOOTLOADER_FRAME_ID_INFO 0x90U", config)
         self.assertIn("#define BOOTLOADER_FRAME_ID_START 0x11U", config)
@@ -82,7 +82,8 @@ class Uart5BootloaderTests(unittest.TestCase):
         self.assertIn("#define BOOTLOADER_MAX_PAYLOAD_SIZE 250U", config)
         self.assertIn("#define BOOTLOADER_WRITE_DATA_MAX 245U", config)
         self.assertIn("#define BOOTLOADER_LED_TOGGLE_PERIOD_MS 75U", config)
-        self.assertIn("#define BOOTLOADER_LED_RUN_PIN GPIO_PIN_10", config)
+        self.assertIn("#define BOOTLOADER_LED_RUN_GPIO_PORT GPIOB", config)
+        self.assertIn("#define BOOTLOADER_LED_RUN_PIN GPIO_PIN_12", config)
         self.assertIn("#define BOOTLOADER_STATUS_REPORT_PERIOD_MS 1000U", config)
         self.assertIn("#define BOOTLOADER_VERSION 0x00020000U", config)
 
@@ -140,19 +141,19 @@ class Uart5BootloaderTests(unittest.TestCase):
         self.assertIn("__enable_irq();", source)
         self.assertIn("app_reset_handler();", source)
 
-    def test_bootloader_main_initializes_uart5_and_dispatches_commands(self):
+    def test_bootloader_main_uses_usb_cdc_and_dispatches_commands(self):
         source = self.read("Bootloader/Core/Src/main.c")
 
-        self.assertIn("UART_HandleTypeDef huart5;", source)
+        self.assertNotIn("UART_HandleTypeDef huart5;", source)
         self.assertIn('#include "app_bootloader_request.h"', source)
-        self.assertIn("MX_UART5_Init", source)
+        self.assertNotIn("MX_UART5_Init", source)
         self.assertIn("MX_GPIO_Init", source)
-        self.assertIn("GPIO_AF8_UART5", source)
+        self.assertNotIn("GPIO_AF8_UART5", source)
         self.assertIn("Bootloader_StatusLedRun(HAL_GetTick());", source)
         self.assertIn("HAL_GPIO_TogglePin(BOOTLOADER_LED_RUN_GPIO_PORT, BOOTLOADER_LED_RUN_PIN);", source)
         self.assertIn("BOOTLOADER_LED_TOGGLE_PERIOD_MS", source)
         self.assertIn("App_BootloaderRequest_ConsumeFlag()", source)
-        self.assertIn("BOOTLOADER_HANDSHAKE_TIMEOUT_MS", source)
+        self.assertIn("Bootloader_EnableUsbCdc", source)
         self.assertIn("Bootloader_HandleFrame", source)
         self.assertIn("Bootloader_JumpToApplication", source)
 
@@ -250,11 +251,11 @@ class Uart5BootloaderTests(unittest.TestCase):
     def test_bootloader_readme_documents_host_protocol(self):
         readme = self.read("README.md")
 
-        self.assertIn("## USB CDC/UART5 Bootloader 协议", readme)
+        self.assertIn("## USB CDC Bootloader 协议", readme)
         self.assertIn("Flash 分区", readme)
         self.assertIn("通信参数", readme)
         self.assertIn("默认链路 | USB CDC `/dev/ttyACM0`", readme)
-        self.assertIn("备用串口 | UART5", readme)
+        self.assertNotIn("备用串口 | UART5", readme)
         self.assertIn("升级流程", readme)
         self.assertIn("0x08000000", readme)
         self.assertIn("0x08008000", readme)

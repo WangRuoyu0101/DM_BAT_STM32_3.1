@@ -9,8 +9,7 @@ class Uart5ProtocolReadmeTests(unittest.TestCase):
     def test_readme_explains_uart5_protocol_in_chinese(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-        self.assertIn("## UART5 应用通信协议", readme)
-        self.assertIn("UART5", readme)
+        self.assertIn("## USB CDC 应用通信协议", readme)
         self.assertIn("从机节点", readme)
         self.assertIn("Jetson", readme)
         self.assertIn("115200", readme)
@@ -52,12 +51,12 @@ class Uart5ProtocolReadmeTests(unittest.TestCase):
         self.assertIn("SIGNAL-MOTOR", readme)
         self.assertIn("SIGNAL-FLASH", readme)
         self.assertIn("SIGNAL-SOUND", readme)
-        self.assertIn("PC5", readme)
+        self.assertIn("PC1", readme)
         self.assertIn("PE7", readme)
-        self.assertIn("PE9", readme)
-        self.assertIn("PE12", readme)
-        self.assertIn("PB1", readme)
-        self.assertIn("PB12", readme)
+        self.assertIn("PE2", readme)
+        self.assertIn("PD8", readme)
+        self.assertIn("PC3", readme)
+        self.assertIn("PD12", readme)
         self.assertNotIn("SIGNAL-MOROTX-SW", readme)
         self.assertNotIn("SIGNAL-RESERVED", readme)
         self.assertIn("Bootloader", readme)
@@ -95,14 +94,14 @@ class Uart5ProtocolReadmeTests(unittest.TestCase):
         qt = (ROOT.parent / "QT_Host/README.md").read_text(encoding="utf-8")
 
         for expected in (
-            "`PB13`（`RGB_Pin`）以 GPIO 时序驱动 WS2812B",
+            "`PD10`（`RGB_Pin`）以 GPIO 时序驱动 WS2812B",
             "三颗灯按 DIN 到 DOUT 级联",
             "它们是一个逻辑像素：三颗灯始终显示相同颜色",
             "连续发送三组相同的 24 bit GRB 数据",
             "上电默认绿色 `#00FF00`、25% 亮度、1 Hz 慢闪",
             "`docs/RGB手册.pdf` 要求 0 码高电平不超过 410 ns",
             "复位低电平配置为 125 us",
-            "当前原理图没有 `PB13` 的 3.3 V -> 5 V 电平转换",
+            "当前原理图没有 `PD10` 的 3.3 V -> 5 V 电平转换",
             "`74AHCT`/`74HCT` 电平转换缓冲器",
             "用示波器确认逻辑高电平和波形余量",
         ):

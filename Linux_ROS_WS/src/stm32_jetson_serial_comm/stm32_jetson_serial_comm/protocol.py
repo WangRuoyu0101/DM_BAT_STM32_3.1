@@ -1,4 +1,4 @@
-"""STM32 UART5 binary frame protocol used by the Jetson host."""
+"""STM32 USB CDC binary frame protocol used by the Jetson host."""
 
 from __future__ import annotations
 

@@ -3,8 +3,8 @@
 本目录用于存放 Jetson 端 bootloader 工具升级 STM32 时使用的应用固件。
 
 应用业务通信和 bootloader 升级默认使用 USB CDC `/dev/ttyACM0`。
-当前应用固件包含 CS1237 ADC 支持：PB14 为 CLK，PD8 为 DIO/DRDY。
-DM3.1 风扇使用 PA5 PWM、PA6/PA7 双路测速，PE15/PE13/PE11 分别为低有效 KEY1/KEY2/KEY3。
+当前应用固件包含 CS1237 ADC 支持：PC9 为 CLK，PC8 为 DIO/DRDY。
+DM3.1 风扇使用 PB9 PWM、PB3/PB6 双路测速，PB13/PB14/PD14 分别为低有效 KEY1/KEY2/KEY3。
 DM3.1 已移除 STM32 USART6 RTK 分帧透传；RTK 由主机通过 CH343P 直连。
 
 ## 目录

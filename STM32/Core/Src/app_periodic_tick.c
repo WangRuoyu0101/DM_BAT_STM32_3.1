@@ -6,7 +6,7 @@
 
 /*
  * TIM6 每 2 ms 进入一次中断，形成应用层统一软件节拍。
- * 中断里只递增计数，LED、UART5、超声波等用户任务都在主循环中根据该 tick 调度。
+ * 中断里只递增计数，LED、USB CDC、超声波等用户任务都在主循环中根据该 tick 调度。
  */
 static volatile uint32_t s_periodic_tick = 0U;
 

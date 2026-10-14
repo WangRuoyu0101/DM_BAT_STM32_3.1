@@ -1,6 +1,6 @@
 # DM3.1_BAT STM32 工程说明
 
-本文档是 `STM32/` 工程的统一入口，汇总应用固件、USB CDC/UART5 通信、UART5 bootloader、编译、烧录和调试流程。
+本文档是 `STM32/` 工程的统一入口，汇总应用固件、USB CDC 通信、USB CDC bootloader、编译、烧录和调试流程。
 
 ## 目录
 
@@ -13,8 +13,8 @@
 - [Flash 分区与启动流程](#flash-分区与启动流程)
 - [CS1237 ADC](#cs1237-adc)
 - [WS2812B RGB 灯](#ws2812b-rgb-灯)
-- [UART5 应用通信协议](#uart5-应用通信协议)
-- [USB CDC/UART5 Bootloader 协议](#usb-cdcuart5-bootloader-协议)
+- [USB CDC 应用通信协议](#usb-cdc-应用通信协议)
+- [USB CDC Bootloader 协议](#usb-cdc-bootloader-协议)
 - [Jetson 端升级配合](#jetson-端升级配合)
 - [测试](#测试)
 - [常见问题](#常见问题)
@@ -26,16 +26,15 @@
 
 | 镜像 | 地址 | 说明 |
 | --- | --- | --- |
-| Bootloader | `0x08000000` | USB CDC/UART5 升级引导程序，占用 Flash 前 32 KB |
+| Bootloader | `0x08000000` | USB CDC 升级引导程序，占用 Flash 前 32 KB |
 | Application | `0x08008000` | 主应用固件，最大 352 KiB |
 | App metadata | `0x08060000` | Sector 7，有效标志、镜像长度和 CRC32 |
 
-主应用默认通过 USB CDC 虚拟串口作为 Jetson 的从机节点，同时保留 UART5 同协议入口，支持状态查询、GPIO 控制、GPIO 状态查询、超声波距离汇总、CS1237 ADC 采样/通道切换，以及运行态进入 bootloader 的请求。
+主应用通过 USB CDC 虚拟串口作为 Jetson 的从机节点，支持状态查询、GPIO 控制、GPIO 状态查询、超声波距离汇总、CS1237 ADC 采样/通道切换，以及运行态进入 bootloader 的请求。
 
 当前默认接口和参数：
 
-- 应用业务通信默认走 USB CDC `/dev/ttyACM0`，UART5 作为备用同协议入口。
-- Bootloader 升级默认走 USB CDC `/dev/ttyACM0`，UART5 可作为备用设备。
+- 应用业务通信和 Bootloader 升级均走 USB CDC `/dev/ttyACM0`。
 - `BOOTLOADER_LED_TOGGLE_PERIOD_MS` 当前为 `75U`，bootloader 升级态运行灯每 75 ms 翻转一次。
 
 ## CS1237 ADC
@@ -44,12 +43,12 @@
 
 | CS1237 | STM32 | 方向 | 说明 |
 | --- | --- | --- | --- |
-| `SCLK` | PB14 | STM32 输出 | GPIO 模拟时钟，空闲为低 |
-| `DOUT/DRDY` | PD8 | 双向 | 平时输入；写配置寄存器时临时切为推挽输出 |
+| `SCLK` | PC9 | STM32 输出 | GPIO 模拟时钟，空闲为低 |
+| `DOUT/DRDY` | PC8 | 双向 | 平时输入；写配置寄存器时临时切为推挽输出 |
 | `VCC` | 3.3V | 电源 | 与 STM32 使用相同逻辑电平 |
 | `GND` | GND | 电源 | 必须共地 |
 
-PB14、PD8 不使用 SPI/DMA。10 Hz 下每次只需读取 24 bit，
+PC9、PC8 不使用 SPI/DMA。10 Hz 下每次只需读取 24 bit，
 主循环轮询 `DOUT/DRDY`，仅在其拉低时执行短暂 GPIO 时序，不等待转换完成。
 
 ### 驱动接口
@@ -63,7 +62,7 @@ App_CS1237_Result App_CS1237_SetChannel(App_CS1237_Channel channel);
 void App_CS1237_GetSnapshot(App_CS1237_Snapshot *snapshot);
 ```
 
-应用默认选择内部温度通道、10 Hz、PGA1、REF 输出开启；差分输入和内部短接
+应用默认选择差分输入通道、10 Hz、PGA128、REF 输出开启；内部温度通道使用 PGA1，内部短接
 使用 PGA128。切换通道后旧快照立即失效，建立阶段结束后才重新置 `valid=1`。
 原始 ADC 为 24 位二进制补码，固件将其符号扩展为 `int32_t`。
 
@@ -98,10 +97,10 @@ STM32 只负责输出原始 ADC；温度、力值换算和标定参数均由 Jet
 
 ```text
 STM32/
-  Bootloader/                 USB CDC/UART5 bootloader 工程源码
+  Bootloader/                 USB CDC bootloader 工程源码
   Core/                       主应用源码和公共模块
     Inc/app_cs1237.h          CS1237 接口、通道、快照和错误定义
-    Src/app_cs1237.c          PB14/PD8 GPIO 时序与周期采样
+    Src/app_cs1237.c          PC9/PC8 GPIO 时序与周期采样
   Drivers/                    STM32 HAL/CMSIS 驱动
   Middlewares/                USB Device 中间件
   USB_DEVICE/                 USB CDC 配置
@@ -114,7 +113,7 @@ STM32/
 
 ## WS2812B RGB 灯
 
-`PB13`（`RGB_Pin`）以 GPIO 时序驱动 WS2812B。外部灯板上的三颗灯按 DIN 到 DOUT 级联，
+`PD10`（`RGB_Pin`）以 GPIO 时序驱动 WS2812B。外部灯板上的三颗灯按 DIN 到 DOUT 级联，
 但它们是一个逻辑像素：三颗灯始终显示相同颜色，固件连续发送三组相同的 24 bit GRB 数据。
 上电默认绿色 `#00FF00`、25% 亮度、1 Hz 慢闪（初始为亮相位）。
 设置只保存在 RAM，复位后恢复此默认值。
@@ -132,8 +131,8 @@ STM32/
 发送一帧时会短暂屏蔽中断以保持 WS2812B 波形；固件使用 DWT 周期计数器产生
 800 kHz 标称时序。`docs/RGB手册.pdf` 要求 0 码高电平不超过 410 ns，固件目标值为
 200 ns，以留出 GPIO 和函数执行开销；1 码目标值为 550 ns，复位低电平配置为 125 us。
-当前原理图没有 `PB13` 的 3.3 V -> 5 V 电平转换。先在实板上
-用示波器确认逻辑高电平和波形余量；若不稳定，停止软件调参并在 PB13 与灯带之间
+当前原理图没有 `PD10` 的 3.3 V -> 5 V 电平转换。先在实板上
+用示波器确认逻辑高电平和波形余量；若不稳定，停止软件调参并在 PD10 与灯带之间
 增加 `74AHCT`/`74HCT` 电平转换缓冲器。
 
 实机验收还需检查：800 kHz 标称位周期、0/1 不同高电平宽度、复位低电平至少
@@ -349,11 +348,10 @@ SCB->VTOR = APP_FLASH_BASE;
 
 bootloader 复位后行为：
 
-1. 初始化 GPIO、UART5、协议解析器并检查 Sector 7 元数据及 App 全镜像 CRC32。
+1. 初始化 GPIO 并检查 Sector 7 元数据及 App 全镜像 CRC32。
 2. App 无效时立即启用 USB CDC，并永久停留在 Bootloader。
 3. App 有效时检查 RTC backup register 中的 bootloader 请求标志；标志有效则停留在升级模式。
-4. App 有效且没有标志时等待 `BOOTLOADER_HANDSHAKE_TIMEOUT_MS`，当前为 2000 ms。
-5. 等待窗口内收到 HELLO 则进入升级流程，否则跳转到 `0x08008000` 主应用。
+4. App 有效且没有标志时立即跳转到 `0x08008000` 主应用。
 
 bootloader 跳转前会校验：
 
@@ -364,20 +362,9 @@ bootloader 跳转前会校验：
 - 设置 `SCB->VTOR = APP_FLASH_BASE`。
 - 设置 MSP 后恢复全局中断，再调用应用 Reset_Handler。
 
-## UART5 应用通信协议
+## USB CDC 应用通信协议
 
-### 串口参数
-
-应用运行态 UART5 参数：
-
-| 项目 | 配置 |
-| --- | --- |
-| 串口 | UART5 |
-| 波特率 | 115200 |
-| 数据格式 | 8N1 |
-| 流控 | 无 |
-| STM32 TX | PC12 |
-| STM32 RX | PD2 |
+应用运行态通过 USB CDC 虚拟串口通信。主机设置的波特率和 8N1 line coding 仅用于兼容串口 API，不对应板上的物理 UART。
 
 统一帧格式：
 
@@ -425,14 +412,16 @@ frame_id + length + payload
 
 | channel_id | 位图 bit | 信号名称 | GPIO |
 | --- | --- | --- | --- |
-| `0x01` | bit0 | `SIGNAL-FLASH-CTR` | PC5 |
+| `0x01` | bit0 | `SIGNAL-FLASH-CTR` | PC1 |
 | `0x02` | bit1 | `SIGNAL-LED` | PE7 |
-| `0x03` | bit2 | `SIGNAL-BEE` | PE9 |
-| `0x04` | bit3 | `SIGNAL-MOTOR` | PE12 |
-| `0x05` | bit4 | `SIGNAL-FLASH` | PB1 |
-| `0x06` | bit5 | `SIGNAL-SOUND` | PB12 |
+| `0x03` | bit2 | `SIGNAL-BEE` | PE2 |
+| `0x04` | bit3 | `SIGNAL-MOTOR` | PD8 |
+| `0x05` | bit4 | `SIGNAL-FLASH` | PC3 |
+| `0x06` | bit5 | `SIGNAL-SOUND` | PD12 |
 
 `level = 0x00` 表示输出低电平，`level = 0x01` 表示输出高电平。
+应用启动后 `SIGNAL-SOUND`（PD12，音频功放使能）默认为高电平；主机仍可通过通道 `0x06` 将其关闭或再次打开。
+应用启动后 `SIGNAL-BEE`（PE2，声光报警）自动保持高电平 1 秒后关闭；若主机在此期间主动控制该通道，则立即取消启动计时并以主机命令为准。
 
 ### 超声波
 
@@ -455,22 +444,18 @@ frame_id + length + payload
 | `0x03` | 长度错误 |
 | `0x04` | bootloader 请求密码错误 |
 
-## USB CDC/UART5 Bootloader 协议
+## USB CDC Bootloader 协议
 
 ### 通信参数
 
-bootloader 升级态默认通过 USB CDC 虚拟串口通信，Jetson 侧通常枚举为 `/dev/ttyACM0`。UART5 保留为备用链路：
+bootloader 升级态通过 USB CDC 虚拟串口通信，Jetson 侧通常枚举为 `/dev/ttyACM0`：
 
 | 项目 | 配置 |
 | --- | --- |
 | 默认链路 | USB CDC `/dev/ttyACM0` |
-| 备用串口 | UART5 |
-| 波特率 | 460800 |
-| 数据格式 | 8N1 |
-| STM32 TX | PC12 |
-| STM32 RX | PD2 |
+| 主机 line coding | 460800、8N1（仅兼容串口 API） |
 
-USB CDC 和 UART5 使用同样的 bootloader 帧格式：
+USB CDC 使用以下 bootloader 帧格式：
 
 ```text
 AA 55 + frame_id + length + payload + CRC8
@@ -591,7 +576,7 @@ ros2 run stm32_jetson_serial_comm stm32_bootloader \
 
 - `--app-baudrate 115200`：发送应用运行态 `0x05` bootloader 请求。
 - `--baudrate 460800`：进入 bootloader 后执行升级。
-- bootloader 升级默认设备为 USB CDC `/dev/ttyACM0`；如需走 UART5，可指定 `--device /dev/ttyTHS0`。
+- bootloader 升级设备为 USB CDC `/dev/ttyACM0`。
 
 如果 STM32 已经在 bootloader 中，可直接升级：
 
@@ -632,7 +617,7 @@ python3 -m unittest STM32/tests/test_cs1237_driver.py -v
 python3 -m unittest STM32/tests/test_cs1237_protocol.py -v
 ```
 
-USB CDC 虚拟串口复用 UART5 应用协议。烧录应用后，主机应枚举出 `/dev/ttyACM*`，可直接走同一套状态查询：
+烧录应用后，USB CDC 应枚举出 `/dev/ttyACM*`，可直接查询状态：
 
 ```sh
 ros2 run stm32_jetson_serial_comm serial_link \
@@ -660,11 +645,11 @@ make -C STM32 app
 
 ## DM3.1 风扇与按键
 
-- PA5 使用 TIM2_CH1 输出 25 kHz PWM，四档为 25%/50%/75%/100%，上电默认 4 档（100%）。
-- PA6/PA7 使用 TIM3_CH1/CH2 下降沿输入捕获，两路转速按每转 2 个脉冲计算；1.5 秒无脉冲回报 0 RPM。
-- PE15/PE13/PE11 分别为 KEY1/KEY2/KEY3，内部上拉、低电平按下、20 ms 软件消抖。
+- PB9 使用 TIM11_CH1 输出 25 kHz PWM，四档为 25%/50%/75%/100%，上电默认 4 档（100%）。
+- PB3/TIM2_CH2 与 PB6/TIM4_CH1 分别进行下降沿输入捕获；两路转速按每转 2 个脉冲计算，1.5 秒无脉冲回报 0 RPM。
+- PB13/PB14/PD14 分别为 KEY1/KEY2/KEY3，内部上拉、低电平按下、20 ms 软件消抖。
 - 应用协议 `0x0A/0x8A` 设置风扇档位，`0x0B/0x8B` 查询档位、双路 RPM 和按键位图；KEY1/KEY2/KEY3 分别对应 bit0/bit1/bit2。
-- PB13 以 WS2812B 协议驱动三颗级联且同步同色的 RGB 灯；见“WS2812B RGB 灯”。
+- PD10 以 WS2812B 协议驱动三颗级联且同步同色的 RGB 灯；见“WS2812B RGB 灯”。
 
 应用构建产物为 `build/app/DM3.1_BAT_app.bin`，并自动同步至
 `Linux_ROS_WS/src/stm32_jetson_serial_comm/firmware/DM3.1_BAT_app.bin`。
@@ -695,14 +680,9 @@ bootloader 会在元数据失效后擦除 sector 2-6，Flash 擦除可能超过�
 
 如果板子擦除较慢，可临时提高到 20 秒。
 
-### 串口升级无响应
+### USB CDC 升级无响应
 
-区分两个波特率：
-
-- 应用运行态通信：`115200`
-- bootloader 升级态通信：`460800`
-
-如果使用 `--request-from-app`，工具会自动先用 `115200` 请求应用复位，再用 `460800` 升级。若手动进入 bootloader，需使用 `--baudrate 460800`。
+确认设备已经重新枚举为 `/dev/ttyACM*`。工具仍会设置应用阶段 `115200`、bootloader 阶段 `460800` 的 line coding，但这不对应物理 UART 波特率。
 
 ### OpenOCD 烧录不稳定
 

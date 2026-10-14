@@ -80,15 +80,15 @@ void HAL_TIM_PWM_MspInit(TIM_HandleTypeDef* htim_pwm)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
 
-  if (htim_pwm->Instance == TIM2)
+  if (htim_pwm->Instance == TIM11)
   {
-    __HAL_RCC_TIM2_CLK_ENABLE();
-    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_TIM11_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
     GPIO_InitStruct.Pin = FAN_PWM_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF1_TIM2;
+    GPIO_InitStruct.Alternate = GPIO_AF3_TIM11;
     HAL_GPIO_Init(FAN_PWM_GPIO_Port, &GPIO_InitStruct);
   }
 }
@@ -97,37 +97,56 @@ void HAL_TIM_IC_MspInit(TIM_HandleTypeDef* htim_ic)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
 
-  if (htim_ic->Instance == TIM3)
+  if (htim_ic->Instance == TIM2)
   {
-    __HAL_RCC_TIM3_CLK_ENABLE();
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-    GPIO_InitStruct.Pin = FAN_SPEED_1_Pin|FAN_SPEED_2_Pin;
+    __HAL_RCC_TIM2_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    GPIO_InitStruct.Pin = FAN_SPEED_1_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF2_TIM3;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-    HAL_NVIC_SetPriority(TIM3_IRQn, 5, 0);
-    HAL_NVIC_EnableIRQ(TIM3_IRQn);
+    GPIO_InitStruct.Alternate = GPIO_AF1_TIM2;
+    HAL_GPIO_Init(FAN_SPEED_1_GPIO_Port, &GPIO_InitStruct);
+    HAL_NVIC_SetPriority(TIM2_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(TIM2_IRQn);
+  }
+  else if (htim_ic->Instance == TIM4)
+  {
+    __HAL_RCC_TIM4_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    GPIO_InitStruct.Pin = FAN_SPEED_2_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF2_TIM4;
+    HAL_GPIO_Init(FAN_SPEED_2_GPIO_Port, &GPIO_InitStruct);
+    HAL_NVIC_SetPriority(TIM4_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(TIM4_IRQn);
   }
 }
 
 void HAL_TIM_PWM_MspDeInit(TIM_HandleTypeDef* htim_pwm)
 {
-  if (htim_pwm->Instance == TIM2)
+  if (htim_pwm->Instance == TIM11)
   {
-    __HAL_RCC_TIM2_CLK_DISABLE();
+    __HAL_RCC_TIM11_CLK_DISABLE();
     HAL_GPIO_DeInit(FAN_PWM_GPIO_Port, FAN_PWM_Pin);
   }
 }
 
 void HAL_TIM_IC_MspDeInit(TIM_HandleTypeDef* htim_ic)
 {
-  if (htim_ic->Instance == TIM3)
+  if (htim_ic->Instance == TIM2)
   {
-    __HAL_RCC_TIM3_CLK_DISABLE();
-    HAL_GPIO_DeInit(GPIOA, FAN_SPEED_1_Pin|FAN_SPEED_2_Pin);
-    HAL_NVIC_DisableIRQ(TIM3_IRQn);
+    __HAL_RCC_TIM2_CLK_DISABLE();
+    HAL_GPIO_DeInit(FAN_SPEED_1_GPIO_Port, FAN_SPEED_1_Pin);
+    HAL_NVIC_DisableIRQ(TIM2_IRQn);
+  }
+  else if (htim_ic->Instance == TIM4)
+  {
+    __HAL_RCC_TIM4_CLK_DISABLE();
+    HAL_GPIO_DeInit(FAN_SPEED_2_GPIO_Port, FAN_SPEED_2_Pin);
+    HAL_NVIC_DisableIRQ(TIM4_IRQn);
   }
 }
 
@@ -218,66 +237,6 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
 
     /* USER CODE END UART4_MspInit 1 */
   }
-  else if(huart->Instance==UART5)
-  {
-    /* USER CODE BEGIN UART5_MspInit 0 */
-
-    /* USER CODE END UART5_MspInit 0 */
-    /* Peripheral clock enable */
-    __HAL_RCC_UART5_CLK_ENABLE();
-
-    __HAL_RCC_GPIOC_CLK_ENABLE();
-    __HAL_RCC_GPIOD_CLK_ENABLE();
-    /**UART5 GPIO Configuration
-    PC12     ------> UART5_TX
-    PD2     ------> UART5_RX
-    */
-    GPIO_InitStruct.Pin = GPIO_PIN_12;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF8_UART5;
-    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-    GPIO_InitStruct.Pin = GPIO_PIN_2;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF8_UART5;
-    HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-    /* UART5 interrupt Init */
-    HAL_NVIC_SetPriority(UART5_IRQn, 0, 0);
-    HAL_NVIC_EnableIRQ(UART5_IRQn);
-
-    /* USER CODE BEGIN UART5_MspInit 1 */
-
-    /* USER CODE END UART5_MspInit 1 */
-  }
-  else if(huart->Instance==USART1)
-  {
-    /* USER CODE BEGIN USART1_MspInit 0 */
-
-    /* USER CODE END USART1_MspInit 0 */
-    /* Peripheral clock enable */
-    __HAL_RCC_USART1_CLK_ENABLE();
-
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-    /**USART1 GPIO Configuration
-    PA9     ------> USART1_TX
-    PA10     ------> USART1_RX
-    */
-    GPIO_InitStruct.Pin = GPIO_PIN_9|GPIO_PIN_10;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-    /* USER CODE BEGIN USART1_MspInit 1 */
-
-    /* USER CODE END USART1_MspInit 1 */
-  }
   else if(huart->Instance==USART2)
   {
     /* USER CODE BEGIN USART2_MspInit 0 */
@@ -364,47 +323,6 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* huart)
     /* USER CODE BEGIN UART4_MspDeInit 1 */
 
     /* USER CODE END UART4_MspDeInit 1 */
-  }
-  else if(huart->Instance==UART5)
-  {
-    /* USER CODE BEGIN UART5_MspDeInit 0 */
-
-    /* USER CODE END UART5_MspDeInit 0 */
-    /* Peripheral clock disable */
-    __HAL_RCC_UART5_CLK_DISABLE();
-
-    /**UART5 GPIO Configuration
-    PC12     ------> UART5_TX
-    PD2     ------> UART5_RX
-    */
-    HAL_GPIO_DeInit(GPIOC, GPIO_PIN_12);
-
-    HAL_GPIO_DeInit(GPIOD, GPIO_PIN_2);
-
-    /* UART5 interrupt DeInit */
-    HAL_NVIC_DisableIRQ(UART5_IRQn);
-
-    /* USER CODE BEGIN UART5_MspDeInit 1 */
-
-    /* USER CODE END UART5_MspDeInit 1 */
-  }
-  else if(huart->Instance==USART1)
-  {
-    /* USER CODE BEGIN USART1_MspDeInit 0 */
-
-    /* USER CODE END USART1_MspDeInit 0 */
-    /* Peripheral clock disable */
-    __HAL_RCC_USART1_CLK_DISABLE();
-
-    /**USART1 GPIO Configuration
-    PA9     ------> USART1_TX
-    PA10     ------> USART1_RX
-    */
-    HAL_GPIO_DeInit(GPIOA, GPIO_PIN_9|GPIO_PIN_10);
-
-    /* USER CODE BEGIN USART1_MspDeInit 1 */
-
-    /* USER CODE END USART1_MspDeInit 1 */
   }
   else if(huart->Instance==USART2)
   {

@@ -256,7 +256,7 @@ class WorkerTest(unittest.TestCase):
 
     def test_jump_usb_disconnect_waits_for_and_verifies_application(self):
         worker, _drivers, _bootloaders = self.make_worker(
-            jump_error=OSError(6, "Device not configured")
+            jump_error=RuntimeError("read failed: [Errno 6] Device not configured")
         )
         logs = []
         finished = []
@@ -273,6 +273,37 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(worker._state, "APPLICATION")
         self.assertEqual(worker._host.status_queries, 1)
         self.assertTrue(any("JUMP 后 USB 已断开" in message for message in logs))
+
+    def test_bootloader_only_upgrade_accepts_wrapped_usb_disconnect(self):
+        worker, _drivers, _bootloaders = self.make_worker(
+            bootloader_mode=True,
+            jump_error=RuntimeError("read failed: [Errno 6] Device not configured"),
+        )
+        finished = []
+        worker.upgrade_finished.connect(lambda *args: finished.append(args))
+        worker.connect_port(PortChoice("COM7", vid=1, pid=2, serial_number="ABC"))
+
+        with tempfile.TemporaryDirectory() as directory:
+            image = Path(directory) / "DM3.1_BAT_app.bin"
+            image.write_bytes(b"firmware")
+            worker.upgrade(str(image), False)
+
+        self.assertTrue(finished[-1][0])
+        self.assertEqual(worker._state, "APPLICATION")
+        self.assertEqual(worker._host.status_queries, 1)
+
+    def test_usb_disconnect_detection_checks_wrapped_and_chained_errors(self):
+        wrapped = RuntimeError("read failed: [Errno 6] Device not configured")
+        try:
+            try:
+                raise OSError(19, "No such device")
+            except OSError as exc:
+                raise RuntimeError("serial read failed") from exc
+        except RuntimeError as chained:
+            self.assertTrue(SerialWorker._is_usb_disconnect(chained))
+
+        self.assertTrue(SerialWorker._is_usb_disconnect(wrapped))
+        self.assertFalse(SerialWorker._is_usb_disconnect(RuntimeError("CRC mismatch")))
 
     def test_failed_upgrade_keeps_bootloader_connected_and_can_retry(self):
         worker, _drivers, _bootloaders = self.make_worker(

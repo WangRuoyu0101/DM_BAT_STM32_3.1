@@ -17,7 +17,8 @@ typedef struct
 } App_BoardIO_Snapshot;
 
 HAL_StatusTypeDef App_BoardIO_Init(TIM_HandleTypeDef *pwm_timer,
-                                   TIM_HandleTypeDef *tach_timer);
+                                   TIM_HandleTypeDef *fan1_tach_timer,
+                                   TIM_HandleTypeDef *fan2_tach_timer);
 void App_BoardIO_Run(uint32_t current_tick);
 uint8_t App_BoardIO_SetFanLevel(uint8_t level);
 uint8_t App_BoardIO_GetFanLevel(void);

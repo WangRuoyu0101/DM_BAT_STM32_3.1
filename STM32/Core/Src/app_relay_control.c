@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #define APP_RELAY_CONTROL_FLASH_PULSE_TICKS 100U
+#define APP_RELAY_CONTROL_STARTUP_ALERT_TICKS 500U
 
 typedef struct
 {
@@ -15,26 +16,38 @@ typedef struct
 } App_RelayControlChannel;
 
 /*
- * UART5 协议中的 GPIO channel_id 与实际输出引脚映射。
+ * USB CDC 协议中的 GPIO channel_id 与实际输出引脚映射。
  * 数组顺序同时决定状态位图 bit 位置：bit0 对应第 1 项，bit5 对应第 6 项。
  */
 static const App_RelayControlChannel s_channels[] = {
   /* SIGNAL-FLASH-CTR */
-  {APP_COMM_GPIO_CHANNEL_FLASH_CTR, GPIOC, GPIO_PIN_5},
+  {APP_COMM_GPIO_CHANNEL_FLASH_CTR, GPIOC, GPIO_PIN_1},
   /* SIGNAL-LED */
   {APP_COMM_GPIO_CHANNEL_LED, GPIOE, GPIO_PIN_7},
   /* SIGNAL-BEE */
-  {APP_COMM_GPIO_CHANNEL_BEE, GPIOE, GPIO_PIN_9},
+  {APP_COMM_GPIO_CHANNEL_BEE, GPIOE, GPIO_PIN_2},
   /* SIGNAL-MOTOR */
-  {APP_COMM_GPIO_CHANNEL_MOTOR, GPIOE, GPIO_PIN_12},
+  {APP_COMM_GPIO_CHANNEL_MOTOR, GPIOD, GPIO_PIN_8},
   /* SIGNAL-FLASH */
-  {APP_COMM_GPIO_CHANNEL_FLASH, GPIOB, GPIO_PIN_1},
+  {APP_COMM_GPIO_CHANNEL_FLASH, GPIOC, GPIO_PIN_3},
   /* SIGNAL-SOUND */
-  {APP_COMM_GPIO_CHANNEL_SOUND, GPIOB, GPIO_PIN_12},
+  {APP_COMM_GPIO_CHANNEL_SOUND, GPIOD, GPIO_PIN_12},
 };
 
 static uint8_t s_flash_pulse_active = 0U;
 static uint32_t s_flash_pulse_start_tick = 0U;
+static uint8_t s_startup_alert_active = 0U;
+static uint32_t s_startup_alert_start_tick = 0U;
+
+void App_RelayControl_Init(uint32_t current_tick)
+{
+  /* 音频功放默认使能，确保主机未下发 GPIO 命令时也可以播放声音。 */
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_SET);
+  /* 上电声光提示保持 1 秒。 */
+  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_2, GPIO_PIN_SET);
+  s_startup_alert_start_tick = current_tick;
+  s_startup_alert_active = 1U;
+}
 
 /**
   * @brief 根据通道 ID 查找继电器控制 GPIO。
@@ -102,6 +115,10 @@ uint8_t App_RelayControl_Apply(const App_CommGpioControl *control, uint32_t curr
       s_flash_pulse_active = 1U;
     }
   }
+  else if (control->channel_id == APP_COMM_GPIO_CHANNEL_BEE)
+  {
+    s_startup_alert_active = 0U;
+  }
 
   HAL_GPIO_WritePin(channel->port, channel->pin, pin_state);
 
@@ -113,8 +130,14 @@ void App_RelayControl_Service(uint32_t current_tick)
   if ((s_flash_pulse_active != 0U) &&
       ((uint32_t)(current_tick - s_flash_pulse_start_tick) >= APP_RELAY_CONTROL_FLASH_PULSE_TICKS))
   {
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
     s_flash_pulse_active = 0U;
+  }
+  if ((s_startup_alert_active != 0U) &&
+      ((uint32_t)(current_tick - s_startup_alert_start_tick) >= APP_RELAY_CONTROL_STARTUP_ALERT_TICKS))
+  {
+    HAL_GPIO_WritePin(GPIOE, GPIO_PIN_2, GPIO_PIN_RESET);
+    s_startup_alert_active = 0U;
   }
 }
 

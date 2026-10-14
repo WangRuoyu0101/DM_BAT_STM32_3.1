@@ -7,7 +7,7 @@
 /*
  * LED_RUN 是应用正常运行指示灯。
  * TIM6 周期为 2 ms，500 个 tick 对应 1000 ms 翻转一次。
- * 进入 bootloader 请求复位等待窗口后，运行灯由 UART5 模块接管为 250 ms 快闪。
+ * 进入 bootloader 请求复位等待窗口后，运行灯由 USB CDC 协议模块接管为 250 ms 快闪。
  */
 #define APP_STATUS_LED_PERIOD_TICKS 500U
 

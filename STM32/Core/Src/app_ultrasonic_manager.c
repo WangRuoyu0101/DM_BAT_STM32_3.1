@@ -231,6 +231,11 @@ void App_UltrasonicManager_HandleRxCplt(UART_HandleTypeDef *huart)
   (void)HAL_UART_Receive_IT(sensor->huart, &sensor->rx_byte, 1U);
 }
 
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  App_UltrasonicManager_HandleRxCplt(huart);
+}
+
 /**
   * @brief 获取三路超声波距离和状态快照。
   * @param snapshot 快照输出缓冲。

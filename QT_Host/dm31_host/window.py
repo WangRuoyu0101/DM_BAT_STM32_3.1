@@ -997,7 +997,6 @@ class MainWindow(QMainWindow):
 
     def on_upgrade_progress(self, stage, percent):
         self.progress.setValue(percent)
-        self.append_log(stage)
 
     def on_bootloader_status(self, status):
         state = {
@@ -1012,7 +1011,8 @@ class MainWindow(QMainWindow):
         )
 
     def on_upgrade_finished(self, ok, detail):
-        self.append_log(f"升级{'完成' if ok else '失败'}: {detail}")
+        if ok:
+            self.append_log(f"升级完成: {detail}")
         self.statusBar().showMessage(detail, 10000)
 
     def closeEvent(self, event):

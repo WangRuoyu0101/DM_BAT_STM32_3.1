@@ -1,4 +1,4 @@
-"""Business payload decoders for STM32 UART5 responses."""
+"""Business payload decoders for STM32 USB CDC responses."""
 
 from __future__ import annotations
 

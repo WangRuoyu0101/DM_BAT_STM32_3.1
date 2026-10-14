@@ -1,4 +1,4 @@
-"""ROS2 node that publishes STM32 UART5 status through standard topics."""
+"""ROS2 node that publishes STM32 USB CDC status through standard topics."""
 
 from __future__ import annotations
 

@@ -4,9 +4,9 @@
 
 #define APP_BOARD_IO_TACH_HZ 100000UL
 
-static const uint16_t s_fan_pulses[] = {840U, 1680U, 2520U, 3360U};
+static const uint16_t s_fan_pulses[] = {1680U, 3360U, 5040U, 6720U};
 static TIM_HandleTypeDef *s_pwm_timer;
-static TIM_HandleTypeDef *s_tach_timer;
+static TIM_HandleTypeDef *s_tach_timers[2];
 static volatile uint16_t s_capture[2];
 static volatile uint8_t s_capture_pending[2];
 static uint16_t s_previous_capture[2];
@@ -32,15 +32,17 @@ static uint16_t App_BoardIO_RpmFromDelta(uint16_t delta)
 }
 
 HAL_StatusTypeDef App_BoardIO_Init(TIM_HandleTypeDef *pwm_timer,
-                                   TIM_HandleTypeDef *tach_timer)
+                                   TIM_HandleTypeDef *fan1_tach_timer,
+                                   TIM_HandleTypeDef *fan2_tach_timer)
 {
-  if ((pwm_timer == NULL) || (tach_timer == NULL))
+  if ((pwm_timer == NULL) || (fan1_tach_timer == NULL) || (fan2_tach_timer == NULL))
   {
     return HAL_ERROR;
   }
 
   s_pwm_timer = pwm_timer;
-  s_tach_timer = tach_timer;
+  s_tach_timers[0] = fan1_tach_timer;
+  s_tach_timers[1] = fan2_tach_timer;
   s_snapshot.fan_level = APP_BOARD_IO_DEFAULT_FAN_LEVEL;
   __HAL_TIM_SET_COMPARE(s_pwm_timer, TIM_CHANNEL_1,
                         s_fan_pulses[APP_BOARD_IO_DEFAULT_FAN_LEVEL - 1U]);
@@ -49,11 +51,11 @@ HAL_StatusTypeDef App_BoardIO_Init(TIM_HandleTypeDef *pwm_timer,
   {
     return HAL_ERROR;
   }
-  if (HAL_TIM_IC_Start_IT(s_tach_timer, TIM_CHANNEL_1) != HAL_OK)
+  if (HAL_TIM_IC_Start_IT(s_tach_timers[0], TIM_CHANNEL_2) != HAL_OK)
   {
     return HAL_ERROR;
   }
-  if (HAL_TIM_IC_Start_IT(s_tach_timer, TIM_CHANNEL_2) != HAL_OK)
+  if (HAL_TIM_IC_Start_IT(s_tach_timers[1], TIM_CHANNEL_1) != HAL_OK)
   {
     return HAL_ERROR;
   }
@@ -157,18 +159,18 @@ void App_BoardIO_GetSnapshot(App_BoardIO_Snapshot *snapshot)
 
 void App_BoardIO_CaptureCallback(TIM_HandleTypeDef *timer)
 {
-  if ((timer == NULL) || (timer != s_tach_timer))
+  if (timer == NULL)
   {
     return;
   }
-  if (timer->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
+  if ((timer == s_tach_timers[0]) && (timer->Channel == HAL_TIM_ACTIVE_CHANNEL_2))
   {
-    s_capture[0] = (uint16_t)HAL_TIM_ReadCapturedValue(timer, TIM_CHANNEL_1);
+    s_capture[0] = (uint16_t)HAL_TIM_ReadCapturedValue(timer, TIM_CHANNEL_2);
     s_capture_pending[0] = 1U;
   }
-  else if (timer->Channel == HAL_TIM_ACTIVE_CHANNEL_2)
+  else if ((timer == s_tach_timers[1]) && (timer->Channel == HAL_TIM_ACTIVE_CHANNEL_1))
   {
-    s_capture[1] = (uint16_t)HAL_TIM_ReadCapturedValue(timer, TIM_CHANNEL_2);
+    s_capture[1] = (uint16_t)HAL_TIM_ReadCapturedValue(timer, TIM_CHANNEL_1);
     s_capture_pending[1] = 1U;
   }
 }

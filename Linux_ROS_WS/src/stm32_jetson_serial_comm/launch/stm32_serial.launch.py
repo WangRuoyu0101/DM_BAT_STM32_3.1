@@ -1,4 +1,4 @@
-"""Launch the STM32 UART5 serial node with Jetson defaults."""
+"""Launch the STM32 USB CDC serial node with Jetson defaults."""
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument

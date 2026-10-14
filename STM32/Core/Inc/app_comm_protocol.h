@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 /*
- * UART5 应用层二进制通信协议。
+ * USB CDC 应用层二进制通信协议。
  * 帧格式：AA 55 + frame_id + length + payload + CRC8。
  * CRC8 计算范围为 frame_id、length 和 payload，帧头不参与校验。
  */
@@ -165,7 +165,7 @@ void App_CommProtocol_InitParser(App_CommParser *parser);
 /* 计算协议帧 CRC8；data 为 NULL 且 length 为 0 时表示空 payload。 */
 uint8_t App_CommProtocol_Checksum(uint8_t frame_id, const uint8_t *data, uint8_t length);
 
-/* 将 frame_id 和 payload 编码为完整 UART5 二进制帧。 */
+/* 将 frame_id 和 payload 编码为完整 USB CDC 二进制帧。 */
 size_t App_CommProtocol_Encode(
   uint8_t frame_id,
   const uint8_t *data,
@@ -173,7 +173,7 @@ size_t App_CommProtocol_Encode(
   uint8_t *output,
   size_t output_size);
 
-/* 单字节流式解析 UART5 二进制帧，可在 UART RX 中断中逐字节调用。 */
+/* 单字节流式解析 USB CDC 二进制帧。 */
 App_CommParseResult App_CommProtocol_ParseByte(
   App_CommParser *parser,
   uint8_t byte,

@@ -57,26 +57,26 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define FAN_PWM_Pin GPIO_PIN_5
-#define FAN_PWM_GPIO_Port GPIOA
-#define FAN_SPEED_1_Pin GPIO_PIN_6
-#define FAN_SPEED_1_GPIO_Port GPIOA
-#define FAN_SPEED_2_Pin GPIO_PIN_7
-#define FAN_SPEED_2_GPIO_Port GPIOA
-#define KEY3_Pin GPIO_PIN_11
-#define KEY3_GPIO_Port GPIOE
-#define KEY2_Pin GPIO_PIN_13
-#define KEY2_GPIO_Port GPIOE
-#define KEY1_Pin GPIO_PIN_15
-#define KEY1_GPIO_Port GPIOE
-#define LED_RUN_Pin GPIO_PIN_10
-#define LED_RUN_GPIO_Port GPIOC
-#define CS1237_CLK_Pin GPIO_PIN_14
-#define CS1237_CLK_GPIO_Port GPIOB
-#define RGB_Pin GPIO_PIN_13
-#define RGB_GPIO_Port GPIOB
+#define FAN_PWM_Pin GPIO_PIN_9
+#define FAN_PWM_GPIO_Port GPIOB
+#define FAN_SPEED_1_Pin GPIO_PIN_3
+#define FAN_SPEED_1_GPIO_Port GPIOB
+#define FAN_SPEED_2_Pin GPIO_PIN_6
+#define FAN_SPEED_2_GPIO_Port GPIOB
+#define KEY1_Pin GPIO_PIN_13
+#define KEY1_GPIO_Port GPIOB
+#define KEY2_Pin GPIO_PIN_14
+#define KEY2_GPIO_Port GPIOB
+#define KEY3_Pin GPIO_PIN_14
+#define KEY3_GPIO_Port GPIOD
+#define LED_RUN_Pin GPIO_PIN_12
+#define LED_RUN_GPIO_Port GPIOB
+#define CS1237_CLK_Pin GPIO_PIN_9
+#define CS1237_CLK_GPIO_Port GPIOC
+#define RGB_Pin GPIO_PIN_10
+#define RGB_GPIO_Port GPIOD
 #define CS1237_DIO_Pin GPIO_PIN_8
-#define CS1237_DIO_GPIO_Port GPIOD
+#define CS1237_DIO_GPIO_Port GPIOC
 
 /* USER CODE BEGIN Private defines */
 

@@ -46,7 +46,7 @@ void App_UltrasonicManager_Run(uint32_t current_tick);
 /* HAL UART 接收完成回调入口，按 UART 实例分发给对应传感器解析器。 */
 void App_UltrasonicManager_HandleRxCplt(UART_HandleTypeDef *huart);
 
-/* 获取最近一次三路距离快照，供 UART5 从机响应 Jetson 查询。 */
+/* 获取最近一次三路距离快照，供 USB CDC 从机响应 Jetson 查询。 */
 void App_UltrasonicManager_GetSnapshot(App_UltrasonicSnapshot *snapshot);
 
 #endif /* APP_ULTRASONIC_MANAGER_H */
