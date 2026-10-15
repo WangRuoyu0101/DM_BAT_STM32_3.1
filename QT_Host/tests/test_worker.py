@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from PySide6.QtCore import QCoreApplication
+from serial import SerialException
 
 from dm31_host.core import PortChoice
 from dm31_host.worker import RtkSerialWorker, SerialWorker, _LoggingDriver
@@ -273,6 +274,30 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(worker._state, "APPLICATION")
         self.assertEqual(worker._host.status_queries, 1)
         self.assertTrue(any("JUMP 后 USB 已断开" in message for message in logs))
+
+    def test_jump_windows_clear_comm_error_is_hidden_while_reconnecting(self):
+        worker, _drivers, _bootloaders = self.make_worker(
+            jump_error=SerialException(
+                "ClearCommError failed "
+                "(PermissionError(13, '设备不识别此命令。', None, 22))"
+            )
+        )
+        logs = []
+        finished = []
+        worker.log_message.connect(logs.append)
+        worker.upgrade_finished.connect(lambda *args: finished.append(args))
+        worker.connect_port(PortChoice("COM7", vid=1, pid=2, serial_number="ABC"))
+
+        with tempfile.TemporaryDirectory() as directory:
+            image = Path(directory) / "DM3.1_BAT_app.bin"
+            image.write_bytes(b"firmware")
+            worker.upgrade(str(image), True)
+
+        self.assertEqual(finished[-1], (True, "固件升级完成"))
+        self.assertEqual(worker._state, "APPLICATION")
+        self.assertEqual(worker._host.status_queries, 1)
+        self.assertIn("JUMP 后 USB 已断开，等待应用重新枚举", logs)
+        self.assertFalse(any("ClearCommError" in message for message in logs))
 
     def test_bootloader_only_upgrade_accepts_wrapped_usb_disconnect(self):
         worker, _drivers, _bootloaders = self.make_worker(

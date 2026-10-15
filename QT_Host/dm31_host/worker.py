@@ -342,8 +342,9 @@ class SerialWorker(QObject):
 
         On macOS, pyserial commonly raises ``SerialException`` with a textual
         ``[Errno 6] Device not configured`` message but leaves ``errno`` unset.
-        The STM32 deliberately disconnects USB after accepting JUMP, so that
-        wrapped exception is expected while the application re-enumerates.
+        On Windows, the same removal can surface as ``ClearCommError failed``.
+        The STM32 deliberately disconnects USB after accepting JUMP, so those
+        wrapped exceptions are expected while the application re-enumerates.
         """
         disconnect_errnos = {5, 6, 19}
         disconnect_markers = (
@@ -353,6 +354,7 @@ class SerialWorker(QObject):
             "input/output error",
             "device not configured",
             "no such device",
+            "clearcommerror failed",
         )
         pending: list[BaseException] = [exc]
         visited: set[int] = set()
@@ -413,7 +415,7 @@ class SerialWorker(QObject):
             except (Exception, SystemExit) as exc:
                 if not jump_started or not self._is_usb_disconnect(exc):
                     raise
-                self.log_message.emit(f"JUMP 后 USB 已断开，等待应用重新枚举: {exc}")
+                self.log_message.emit("JUMP 后 USB 已断开，等待应用重新枚举")
             self._close_driver()
             self._sleep(1.5)
             app_port = self._wait_for_port()
