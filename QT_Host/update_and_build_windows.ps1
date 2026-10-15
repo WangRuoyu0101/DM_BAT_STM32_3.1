@@ -39,17 +39,19 @@ function Restore-TemporaryStash {
         [string]$Marker
     )
 
-    $stashRef = (& git -C $Root stash list --format="%gd %s" | Select-String -SimpleMatch $Marker | Select-Object -First 1).Line
+    $stashRef = (& git -c $script:GitSafeDirectoryConfig -c $script:GitFileModeConfig -C $Root stash list --format="%gd %s" | Select-String -SimpleMatch $Marker | Select-Object -First 1).Line
     if (-not $stashRef) {
         throw "Unable to find the temporary stash '$Marker'. Run 'git stash list' before making more changes."
     }
 
     $stashName = ($stashRef -split " ", 2)[0]
-    Invoke-CheckedCommand git -C $Root stash pop $stashName
+    Invoke-CheckedCommand git -c $script:GitSafeDirectoryConfig -c $script:GitFileModeConfig -C $Root stash pop $stashName
 }
 
 $RepositoryRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
-$gitTopLevel = (& git -C $RepositoryRoot rev-parse --show-toplevel 2>$null)
+$script:GitSafeDirectoryConfig = "safe.directory=$($RepositoryRoot.Replace('\', '/'))"
+$script:GitFileModeConfig = "core.fileMode=false"
+$gitTopLevel = (& git -c $script:GitSafeDirectoryConfig -c $script:GitFileModeConfig -C $RepositoryRoot rev-parse --show-toplevel 2>$null)
 if ($LASTEXITCODE -ne 0 -or -not $gitTopLevel) {
     throw "Not a Git repository: $RepositoryRoot"
 }
@@ -59,30 +61,30 @@ if ($gitTopLevel -ne $RepositoryRoot) {
 }
 
 if (-not $SkipPull) {
-    $branch = (& git -C $RepositoryRoot branch --show-current).Trim()
+    $branch = (& git -c $script:GitSafeDirectoryConfig -c $script:GitFileModeConfig -C $RepositoryRoot branch --show-current).Trim()
     if ($LASTEXITCODE -ne 0 -or -not $branch) {
         throw "The repository must be on a branch before pulling updates."
     }
 
-    & git -C $RepositoryRoot rev-parse --abbrev-ref --symbolic-full-name '@{u}' *> $null
+    & git -c $script:GitSafeDirectoryConfig -c $script:GitFileModeConfig -C $RepositoryRoot rev-parse --abbrev-ref --symbolic-full-name '@{u}' *> $null
     if ($LASTEXITCODE -ne 0) {
         throw "Branch '$branch' has no upstream. Configure it before running this script."
     }
 
-    $dirty = [bool](& git -C $RepositoryRoot status --porcelain)
+    $dirty = [bool](& git -c $script:GitSafeDirectoryConfig -c $script:GitFileModeConfig -C $RepositoryRoot status --porcelain)
     $stashMarker = "dm31-windows-build-$([guid]::NewGuid().ToString('N'))"
     $stashCreated = $false
     $pullError = $null
 
     if ($dirty) {
         Write-Host "Saving local changes to a temporary stash..."
-        Invoke-CheckedCommand git -C $RepositoryRoot stash push --include-untracked -m $stashMarker
+        Invoke-CheckedCommand git -c $script:GitSafeDirectoryConfig -c $script:GitFileModeConfig -C $RepositoryRoot stash push --include-untracked -m $stashMarker
         $stashCreated = $true
     }
 
     try {
         Write-Host "Pulling '$branch' with fast-forward only..."
-        Invoke-CheckedCommand git -C $RepositoryRoot pull --ff-only
+        Invoke-CheckedCommand git -c $script:GitSafeDirectoryConfig -c $script:GitFileModeConfig -C $RepositoryRoot pull --ff-only
     }
     catch {
         $pullError = $_

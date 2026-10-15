@@ -49,6 +49,7 @@ try {
     Invoke-Git $mac config user.email "dm31-test@example.invalid"
     Set-Content -LiteralPath (Join-Path $mac "app.txt") -Value "base"
     Invoke-Git $mac add app.txt
+    Invoke-Git $mac update-index --chmod=+x app.txt
     Invoke-Git $mac commit -m "initial"
     Invoke-Git $mac branch -M main
     Invoke-Git $mac remote add origin $remote
@@ -60,6 +61,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Unable to clone Windows fixture repository." }
     Invoke-Git $windows config user.name "DM31 Test"
     Invoke-Git $windows config user.email "dm31-test@example.invalid"
+    Invoke-Git $windows config core.fileMode true
 
     Set-Content -LiteralPath (Join-Path $windows "app.txt") -Value "local change"
     Set-Content -LiteralPath (Join-Path $windows "local-untracked.txt") -Value "keep me"
@@ -73,12 +75,20 @@ try {
     Invoke-Git $mac commit -m "mac update"
     Invoke-Git $mac push
 
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $fixtureScript `
-        -SkipDependencies `
-        -SkipTests `
-        -SkipBuild
-    if ($LASTEXITCODE -ne 0) {
-        throw "Update script exited with code $LASTEXITCODE."
+    $previousDifferentOwner = $env:GIT_TEST_ASSUME_DIFFERENT_OWNER
+    try {
+        $env:GIT_TEST_ASSUME_DIFFERENT_OWNER = "1"
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $fixtureScript `
+            -SkipDependencies `
+            -SkipTests `
+            -SkipBuild
+        $scriptExitCode = $LASTEXITCODE
+    }
+    finally {
+        $env:GIT_TEST_ASSUME_DIFFERENT_OWNER = $previousDifferentOwner
+    }
+    if ($scriptExitCode -ne 0) {
+        throw "Update script exited with code $scriptExitCode."
     }
 
     Assert-Equal "local change" ((Get-Content -Raw (Join-Path $windows "app.txt")).Trim()) "Tracked local changes were not restored."
